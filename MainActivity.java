@@ -1,137 +1,93 @@
-
 package com.saqib.poolpro;
 
 import android.app.*;
 import android.os.*;
 import android.content.*;
-import android.net.Uri;
+import android.graphics.*;
 import android.provider.Settings;
+import android.net.Uri;
 import android.view.*;
 import android.widget.*;
-import android.graphics.*;
-import android.media.projection.*;
 
 public class MainActivity extends Activity {
-
     WindowManager wm;
-    View bubble;
-    TextView bubbleText, powerText;
-    SeekBar powerBar;
-    int power = 50;
-
-    MediaProjectionManager projectionManager;
-    MediaProjection mediaProjection;
-
-    static final int SCREEN_CAPTURE_REQUEST = 1001;
+    View aimLine;
 
     public void onCreate(Bundle b) {
         super.onCreate(b);
 
-        projectionManager =
-            (MediaProjectionManager)getSystemService(
-                Context.MEDIA_PROJECTION_SERVICE
-            );
-
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(1);
-        layout.setPadding(24, 35, 24, 24);
+        layout.setPadding(24, 40, 24, 24);
 
         TextView title = new TextView(this);
-        title.setText("Saqib Pool Pro");
-        title.setTextSize(26);
+        title.setText("Saqib Pool Pro - Aim Test");
+        title.setTextSize(24);
         layout.addView(title);
 
-        powerText = new TextView(this);
+        TextView powerText = new TextView(this);
         powerText.setText("Power: 50%");
-        powerText.setTextSize(22);
         layout.addView(powerText);
 
-        powerBar = new SeekBar(this);
-        powerBar.setMax(100);
-        powerBar.setProgress(50);
-        layout.addView(powerBar);
-
-        powerBar.setOnSeekBarChangeListener(
-            new SeekBar.OnSeekBarChangeListener() {
-                public void onProgressChanged(
-                    SeekBar s, int value, boolean user) {
-                    power = value;
-                    powerText.setText("Power: " + power + "%");
-                    updateBubble();
-                }
-                public void onStartTrackingTouch(SeekBar s) {}
-                public void onStopTrackingTouch(SeekBar s) {}
+        SeekBar power = new SeekBar(this);
+        power.setMax(100);
+        power.setProgress(50);
+        power.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean u) {
+                powerText.setText("Power: " + p + "%");
             }
-        );
-
-        Button capture = new Button(this);
-        capture.setText("Allow Screen Capture");
-        capture.setOnClickListener(v -> {
-            Intent intent =
-                projectionManager.createScreenCaptureIntent();
-            startActivityForResult(
-                intent, SCREEN_CAPTURE_REQUEST
-            );
+            public void onStartTrackingTouch(SeekBar s) {}
+            public void onStopTrackingTouch(SeekBar s) {}
         });
-        layout.addView(capture);
+        layout.addView(power);
 
         Button show = new Button(this);
-        show.setText("Show Floating Button");
-        show.setOnClickListener(v -> {
-            if (!Settings.canDrawOverlays(this)) {
-                Intent i = new Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:" + getPackageName())
-                );
-                startActivity(i);
-            } else {
-                showBubble();
-            }
-        });
+        show.setText("Show Aim Line");
+        show.setOnClickListener(v -> showAimLine());
         layout.addView(show);
+
+        Button hide = new Button(this);
+        hide.setText("Hide Aim Line");
+        hide.setOnClickListener(v -> hideAimLine());
+        layout.addView(hide);
 
         setContentView(layout);
     }
 
-    protected void onActivityResult(
-        int requestCode, int resultCode, Intent data) {
-
-        super.onActivityResult(requestCode, resultCode, data);
-
-        if (requestCode == SCREEN_CAPTURE_REQUEST) {
-            if (resultCode == RESULT_OK && data != null) {
-                mediaProjection =
-                    projectionManager.getMediaProjection(
-                        resultCode, data
-                    );
-
-                Toast.makeText(
-                    this,
-                    "Screen capture permission granted!",
-                    Toast.LENGTH_LONG
-                ).show();
-            } else {
-                Toast.makeText(
-                    this,
-                    "Screen capture permission denied",
-                    Toast.LENGTH_LONG
-                ).show();
-            }
+    void showAimLine() {
+        if (!Settings.canDrawOverlays(this)) {
+            Intent i = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:" + getPackageName()));
+            startActivity(i);
+            return;
         }
-    }
 
-    void showBubble() {
-        if (bubble != null) return;
+        if (aimLine != null) return;
 
         wm = (WindowManager)getSystemService(WINDOW_SERVICE);
 
-        bubbleText = new TextView(this);
-        bubbleText.setTextColor(Color.WHITE);
-        bubbleText.setGravity(Gravity.CENTER);
-        bubbleText.setPadding(18, 14, 18, 14);
-        bubbleText.setBackgroundColor(Color.rgb(20,110,70));
+        aimLine = new View(this) {
+            Paint paint = new Paint(3);
 
-        updateBubble();
+            protected void onDraw(Canvas c) {
+                super.onDraw(c);
+                paint.setColor(Color.GREEN);
+                paint.setStrokeWidth(6);
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setPathEffect(new DashPathEffect(
+                    new float[]{18, 12}, 0));
+
+                float x = getWidth() / 2f;
+                float y1 = getHeight() * 0.88f;
+                float y2 = getHeight() * 0.18f;
+
+                c.drawLine(x, y1, x, y2, paint);
+
+                paint.setPathEffect(null);
+                paint.setStyle(Paint.Style.FILL);
+                c.drawCircle(x, y2, 9, paint);
+            }
+        };
 
         int type = Build.VERSION.SDK_INT >= 26
             ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -139,40 +95,27 @@ public class MainActivity extends Activity {
 
         WindowManager.LayoutParams p =
             new WindowManager.LayoutParams(
-                -2, -2, type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                type,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                    | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                    | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT
             );
 
-        p.gravity = Gravity.TOP | Gravity.END;
-        p.x = 25;
-        p.y = 200;
-
-        bubble = bubbleText;
-        wm.addView(bubble, p);
+        wm.addView(aimLine, p);
     }
 
-    void updateBubble() {
-        if (bubbleText != null) {
-            bubbleText.setText(
-                "POOL PRO\nPower: " + power + "%"
-            );
+    void hideAimLine() {
+        if (aimLine != null && wm != null) {
+            wm.removeView(aimLine);
+            aimLine = null;
         }
     }
 
     protected void onDestroy() {
+        hideAimLine();
         super.onDestroy();
-
-        if (mediaProjection != null) {
-            mediaProjection.stop();
-            mediaProjection = null;
-        }
-
-        if (bubble != null && wm != null) {
-            try {
-                wm.removeView(bubble);
-            } catch (Exception e) {}
-            bubble = null;
-        }
     }
-    }
+}
