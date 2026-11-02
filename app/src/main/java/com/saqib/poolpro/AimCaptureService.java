@@ -11,6 +11,7 @@ import android.media.projection.*;
 import android.os.*;
 import android.util.DisplayMetrics;
 import android.view.*;
+
 import java.nio.ByteBuffer;
 
 public class AimCaptureService extends Service {
@@ -27,8 +28,6 @@ public class AimCaptureService extends Service {
     private HandlerThread worker;
     private Handler workerHandler;
 
-    private int lastX = -1;
-    private int lastY = -1;
     private long lastProcessTime = 0;
 
     private static final int STEP = 2;
@@ -46,8 +45,7 @@ public class AimCaptureService extends Service {
     }
 
     @Override
-    public int onStartCommand(
-            Intent intent, int flags, int startId) {
+    public int onStartCommand(Intent intent, int flags, int startId) {
 
         if (intent == null) {
             stopSelf();
@@ -57,8 +55,7 @@ public class AimCaptureService extends Service {
         Notification notification;
 
         if (Build.VERSION.SDK_INT >= 26) {
-            notification = new Notification.Builder(
-                    this, "pool_capture")
+            notification = new Notification.Builder(this, "pool_capture")
                     .setContentTitle("Saqib Pool Pro")
                     .setContentText("White ball detection active")
                     .setSmallIcon(android.R.drawable.ic_menu_camera)
@@ -66,7 +63,7 @@ public class AimCaptureService extends Service {
         } else {
             notification = new Notification.Builder(this)
                     .setContentTitle("Saqib Pool Pro")
-                    .setContentText("Ball detection active")
+                    .setContentText("White ball detection active")
                     .setSmallIcon(android.R.drawable.ic_menu_camera)
                     .build();
         }
@@ -78,14 +75,12 @@ public class AimCaptureService extends Service {
             startForeground(7, notification);
         }
 
-        int resultCode = intent.getIntExtra(
-                EXTRA_RESULT_CODE, 0);
+        int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
 
         Intent data;
 
         if (Build.VERSION.SDK_INT >= 33) {
-            data = intent.getParcelableExtra(
-                    EXTRA_DATA, Intent.class);
+            data = intent.getParcelableExtra(EXTRA_DATA, Intent.class);
         } else {
             data = intent.getParcelableExtra(EXTRA_DATA);
         }
@@ -99,8 +94,7 @@ public class AimCaptureService extends Service {
                 (MediaProjectionManager)
                         getSystemService(MEDIA_PROJECTION_SERVICE);
 
-        projection = manager.getMediaProjection(
-                resultCode, data);
+        projection = manager.getMediaProjection(resultCode, data);
 
         if (projection == null) {
             stopSelf();
@@ -133,35 +127,29 @@ public class AimCaptureService extends Service {
         int height = dm.heightPixels;
 
         imageReader = ImageReader.newInstance(
-                width,
-                height,
-                PixelFormat.RGBA_8888,
-                2
-        );
+                width, height, PixelFormat.RGBA_8888, 2);
 
-        imageReader.setOnImageAvailableListener(
-                reader -> {
+        imageReader.setOnImageAvailableListener(reader -> {
 
-                    Image image = reader.acquireLatestImage();
+            Image image = reader.acquireLatestImage();
 
-                    if (image == null) return;
+            if (image == null) return;
 
-                    try {
-                        long now = System.currentTimeMillis();
+            try {
+                long now = System.currentTimeMillis();
 
-                        if (now - lastProcessTime >= 100) {
-                            lastProcessTime = now;
-                            detectBall(image);
-                        }
+                if (now - lastProcessTime >= 120) {
+                    lastProcessTime = now;
+                    detectBall(image);
+                }
 
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    } finally {
-                        image.close();
-                    }
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                image.close();
+            }
 
-                }, workerHandler
-        );
+        }, workerHandler);
 
         virtualDisplay = projection.createVirtualDisplay(
                 "SaqibPoolProCapture",
@@ -178,7 +166,6 @@ public class AimCaptureService extends Service {
     private void detectBall(Image image) {
 
         Image.Plane[] planes = image.getPlanes();
-
         if (planes.length == 0) return;
 
         ByteBuffer buffer = planes[0].getBuffer();
@@ -195,19 +182,20 @@ public class AimCaptureService extends Service {
         boolean[] visited = new boolean[gw * gh];
         int[] queue = new int[gw * gh];
 
-        int minGX = (int)(gw * 0.10f);
-        int maxGX = (int)(gw * 0.92f);
+        // Search inside the pool table area.
+        int minGX = (int)(gw * 0.08f);
+        int maxGX = (int)(gw * 0.94f);
 
-        int minGY = (int)(gh * 0.10f);
-        int maxGY = (int)(gh * 0.96f);
+        int minGY = (int)(gh * 0.20f);
+        int maxGY = (int)(gh * 0.97f);
 
         int bestX = -1;
         int bestY = -1;
 
-        double bestScore = -1;
+        double bestScore = 0;
 
-        int minDiameter = Math.max(5, (int)(gw * 0.012f));
-        int maxDiameter = Math.max(20, (int)(gw * 0.075f));
+        int minDiameter = Math.max(7, (int)(gw * 0.018f));
+        int maxDiameter = Math.max(20, (int)(gw * 0.065f));
 
         for (int gy = minGY; gy < maxGY; gy++) {
 
@@ -217,11 +205,9 @@ public class AimCaptureService extends Service {
 
                 if (visited[index]) continue;
 
-                if (!isWhite(buffer,
-                        gx * STEP,
-                        gy * STEP,
-                        rowStride,
-                        pixelStride)) {
+                if (!isBrightWhite(buffer,
+                        gx * STEP, gy * STEP,
+                        rowStride, pixelStride)) {
                     continue;
                 }
 
@@ -255,12 +241,10 @@ public class AimCaptureService extends Service {
 
                     minX = Math.min(minX, x);
                     maxX = Math.max(maxX, x);
-
                     minY = Math.min(minY, y);
                     maxY = Math.max(maxY, y);
 
                     for (int yy = y - 1; yy <= y + 1; yy++) {
-
                         for (int xx = x - 1; xx <= x + 1; xx++) {
 
                             if (xx < minGX || xx >= maxGX ||
@@ -271,14 +255,15 @@ public class AimCaptureService extends Service {
                             int ni = yy * gw + xx;
 
                             if (!visited[ni] &&
-                                    isWhite(buffer,
-                                            xx * STEP,
-                                            yy * STEP,
-                                            rowStride,
-                                            pixelStride)) {
+                                    isBrightWhite(buffer,
+                                            xx * STEP, yy * STEP,
+                                            rowStride, pixelStride)) {
 
                                 visited[ni] = true;
-                                queue[tail++] = ni;
+
+                                if (tail < queue.length) {
+                                    queue[tail++] = ni;
+                                }
                             }
                         }
                     }
@@ -292,54 +277,43 @@ public class AimCaptureService extends Service {
                     continue;
                 }
 
-                float ratio = (float)bw / bh;
+                float ratio = (float) bw / bh;
 
-                if (ratio < 0.78f || ratio > 1.28f) {
+                if (ratio < 0.80f || ratio > 1.25f) {
                     continue;
                 }
 
-                float fill = (float)count / (bw * bh);
+                float fill = (float) count / (bw * bh);
 
-                if (fill < 0.48f) continue;
+                if (fill < 0.30f) continue;
 
-                int cx = (int)(sumX / count) * STEP;
-                int cy = (int)(sumY / count) * STEP;
+                // Reject very small white patches.
+                if (count < 12) continue;
 
-                double roundScore =
-                        1.0 - Math.abs(1.0 - ratio);
+                float roundness =
+                        1.0f - Math.abs(1.0f - ratio);
 
-                double score = count * fill * roundScore;
+                double score = count * fill * roundness;
 
-                if (lastX >= 0 && lastY >= 0) {
-
-                    double distance = Math.hypot(
-                            cx - lastX,
-                            cy - lastY);
-
-                    score /= (1.0 + distance / (width * 0.30));
-                }
-
+                // Prefer a reasonably sized round white object.
                 if (score > bestScore) {
 
                     bestScore = score;
 
-                    bestX = cx;
-                    bestY = cy;
+                    bestX = (int)(sumX / count) * STEP;
+                    bestY = (int)(sumY / count) * STEP;
                 }
             }
         }
 
         if (bestX >= 0 && bestY >= 0) {
 
-            lastX = bestX;
-            lastY = bestY;
-
             Intent update = new Intent(ACTION_BALL);
 
             update.setPackage(getPackageName());
 
-            update.putExtra("x", (float)bestX);
-            update.putExtra("y", (float)bestY);
+            update.putExtra("x", (float) bestX);
+            update.putExtra("y", (float) bestY);
 
             update.putExtra("width", width);
             update.putExtra("height", height);
@@ -348,7 +322,7 @@ public class AimCaptureService extends Service {
         }
     }
 
-    private boolean isWhite(
+    private boolean isBrightWhite(
             ByteBuffer buffer,
             int x,
             int y,
@@ -368,10 +342,10 @@ public class AimCaptureService extends Service {
         int max = Math.max(r, Math.max(g, b));
         int min = Math.min(r, Math.min(g, b));
 
-        return r > 205 &&
-                g > 205 &&
-                b > 205 &&
-                max - min < 40;
+        return r >= 185 &&
+                g >= 185 &&
+                b >= 185 &&
+                max - min <= 45;
     }
 
     private void releaseCapture(boolean stopProjection) {
@@ -430,4 +404,4 @@ public class AimCaptureService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-                    }
+}
