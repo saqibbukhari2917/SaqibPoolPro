@@ -1,4 +1,5 @@
 
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -25,39 +26,10 @@
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
 
+        <service
+            android:name=".AimOverlayService"
+            android:exported="false" />
+
     </application>
+
 </manifest>
-<uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
-<service
-    android:name=".AimCaptureService"
-    android:exported="false"
-    android:foregroundServiceType="mediaProjection" />
-
-<service
-    android:name=".AimOverlayService"
-    android:exported="false" />
-Intent overlay = new Intent(
-        this, AimOverlayService.class);
-
-startService(overlay);
-
-Intent capture = new Intent(
-        this, AimCaptureService.class);
-
-capture.putExtra(
-        AimCaptureService.EXTRA_RESULT_CODE,
-        resultCode);
-
-capture.putExtra(
-        AimCaptureService.EXTRA_DATA,
-        data);
-
-if (Build.VERSION.SDK_INT >= 26) {
-    startForegroundService(capture);
-} else {
-    startService(capture);
-}
