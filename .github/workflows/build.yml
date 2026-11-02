@@ -1,3 +1,4 @@
+
 name: Build Android APK
 
 on:
@@ -19,6 +20,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Setup Android
+        uses: android-actions/setup-android@v3
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -26,18 +30,19 @@ jobs:
 
       - name: Install Android SDK
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Prepare Android project
+      - name: Verify project files
         run: |
-          mkdir -p app/src/main/java/com/saqib/poolpro
-          mkdir -p app/src/main
+          test -f app/build.gradle
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/java/com/saqib/poolpro/MainActivity.java
+          test -f app/src/main/java/com/saqib/poolpro/AimCaptureService.java
+          test -f app/src/main/java/com/saqib/poolpro/AimOverlayService.java
 
-          cp MainActivity.java app/src/main/java/com/saqib/poolpro/
-          cp AimCaptureService.java app/src/main/java/com/saqib/poolpro/
-          cp AndroidManifest.xml app/src/main/
-
+      - name: Prepare Gradle configuration
+        run: |
           cat > settings.gradle <<'EOF'
           pluginManagement {
               repositories {
@@ -63,25 +68,6 @@ jobs:
           }
           EOF
 
-          cat > app/build.gradle <<'EOF'
-          plugins {
-              id 'com.android.application'
-          }
-
-          android {
-              namespace 'com.saqib.poolpro'
-              compileSdk 35
-
-              defaultConfig {
-                  applicationId 'com.saqib.poolpro'
-                  minSdk 23
-                  targetSdk 28
-                  versionCode 1
-                  versionName '1.0'
-              }
-          }
-          EOF
-
       - name: Build APK
         run: gradle --no-daemon assembleDebug
 
@@ -90,3 +76,4 @@ jobs:
         with:
           name: Saqib-Pool-Pro
           path: app/build/outputs/apk/debug/app-debug.apk
+          
