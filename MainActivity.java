@@ -21,14 +21,44 @@ public class MainActivity extends Activity {
     int powerValue = 50;
     boolean aimVisible = false;
 
+    float ballX = -1;
+    float ballY = -1;
+    int screenW = 1;
+    int screenH = 1;
+
     static final int CAPTURE_REQUEST = 1001;
+
+    private final BroadcastReceiver ballReceiver =
+            new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            ballX = intent.getFloatExtra("x", -1);
+            ballY = intent.getFloatExtra("y", -1);
+            screenW = intent.getIntExtra("width", 1);
+            screenH = intent.getIntExtra("height", 1);
+
+            if (aimLine != null) {
+                aimLine.invalidate();
+            }
+        }
+    };
 
     @Override
     public void onCreate(Bundle b) {
         super.onCreate(b);
 
         projectionManager = (MediaProjectionManager)
-            getSystemService(MEDIA_PROJECTION_SERVICE);
+                getSystemService(MEDIA_PROJECTION_SERVICE);
+
+        IntentFilter filter =
+                new IntentFilter(AimCaptureService.ACTION_BALL);
+
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(ballReceiver, filter,
+                    Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(ballReceiver, filter);
+        }
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(1);
@@ -48,24 +78,24 @@ public class MainActivity extends Activity {
         power.setProgress(50);
 
         power.setOnSeekBarChangeListener(
-            new SeekBar.OnSeekBarChangeListener() {
-                public void onProgressChanged(
+                new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(
                     SeekBar s, int value, boolean user) {
-                    powerValue = value;
-                    powerText.setText("Power: " + value + "%");
-                    updateBubble();
-                }
-                public void onStartTrackingTouch(SeekBar s) {}
-                public void onStopTrackingTouch(SeekBar s) {}
+                powerValue = value;
+                powerText.setText("Power: " + value + "%");
+                updateBubble();
             }
-        );
+            public void onStartTrackingTouch(SeekBar s) {}
+            public void onStopTrackingTouch(SeekBar s) {}
+        });
+
         layout.addView(power);
 
         Button capture = new Button(this);
         capture.setText("Allow Screen Capture");
         capture.setOnClickListener(v -> {
             Intent intent =
-                projectionManager.createScreenCaptureIntent();
+                    projectionManager.createScreenCaptureIntent();
             startActivityForResult(intent, CAPTURE_REQUEST);
         });
         layout.addView(capture);
@@ -90,7 +120,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onActivityResult(
-        int requestCode, int resultCode, Intent data) {
+            int requestCode, int resultCode, Intent data) {
 
         super.onActivityResult(requestCode, resultCode, data);
 
@@ -99,17 +129,13 @@ public class MainActivity extends Activity {
         if (resultCode == RESULT_OK && data != null) {
 
             Intent serviceIntent =
-                new Intent(this, AimCaptureService.class);
+                    new Intent(this, AimCaptureService.class);
 
             serviceIntent.putExtra(
-                AimCaptureService.EXTRA_RESULT_CODE,
-                resultCode
-            );
+                    AimCaptureService.EXTRA_RESULT_CODE, resultCode);
 
             serviceIntent.putExtra(
-                AimCaptureService.EXTRA_DATA,
-                data
-            );
+                    AimCaptureService.EXTRA_DATA, data);
 
             try {
                 if (Build.VERSION.SDK_INT >= 26) {
@@ -119,51 +145,51 @@ public class MainActivity extends Activity {
                 }
 
                 Toast.makeText(this,
-                    "Screen capture service started",
-                    Toast.LENGTH_LONG).show();
+                        "Screen capture service started",
+                        Toast.LENGTH_LONG).show();
 
-                // Open 8 Ball Pool after starting capture
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                new Handler(Looper.getMainLooper())
+                        .postDelayed(() -> {
+
                     Intent game = getPackageManager()
-                        .getLaunchIntentForPackage(
-                            "com.miniclip.eightballpool"
-                        );
+                            .getLaunchIntentForPackage(
+                                    "com.miniclip.eightballpool");
 
                     if (game != null) {
                         startActivity(game);
                     } else {
                         Toast.makeText(this,
-                            "8 Ball Pool not found",
-                            Toast.LENGTH_LONG).show();
+                                "8 Ball Pool not found",
+                                Toast.LENGTH_LONG).show();
                     }
                 }, 1000);
 
             } catch (Exception e) {
                 Toast.makeText(this,
-                    "Capture error: " + e.getMessage(),
-                    Toast.LENGTH_LONG).show();
+                        "Capture error: " + e.getMessage(),
+                        Toast.LENGTH_LONG).show();
             }
 
         } else {
             Toast.makeText(this,
-                "Screen capture permission denied",
-                Toast.LENGTH_LONG).show();
+                    "Screen capture permission denied",
+                    Toast.LENGTH_LONG).show();
         }
     }
 
     void showBubble() {
+
         if (!Settings.canDrawOverlays(this)) {
             Intent i = new Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:" + getPackageName())
-            );
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
             startActivity(i);
             return;
         }
 
         if (bubble != null) return;
 
-        wm = (WindowManager)getSystemService(WINDOW_SERVICE);
+        wm = (WindowManager) getSystemService(WINDOW_SERVICE);
 
         bubble = new TextView(this);
         bubble.setTextColor(Color.WHITE);
@@ -183,17 +209,16 @@ public class MainActivity extends Activity {
         });
 
         int type = Build.VERSION.SDK_INT >= 26
-            ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            : WindowManager.LayoutParams.TYPE_PHONE;
+                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                : WindowManager.LayoutParams.TYPE_PHONE;
 
         WindowManager.LayoutParams p =
-            new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT
-            );
+                new WindowManager.LayoutParams(
+                        WindowManager.LayoutParams.WRAP_CONTENT,
+                        WindowManager.LayoutParams.WRAP_CONTENT,
+                        type,
+                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                        PixelFormat.TRANSLUCENT);
 
         p.gravity = Gravity.TOP | Gravity.END;
         p.x = 25;
@@ -209,17 +234,18 @@ public class MainActivity extends Activity {
     }
 
     void showAimLine() {
+
         if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(this,
-                "Allow overlay permission first",
-                Toast.LENGTH_SHORT).show();
+                    "Allow overlay permission first",
+                    Toast.LENGTH_SHORT).show();
             return;
         }
 
         if (aimLine != null) return;
 
         if (wm == null) {
-            wm = (WindowManager)getSystemService(WINDOW_SERVICE);
+            wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         }
 
         aimLine = new View(this) {
@@ -229,45 +255,58 @@ public class MainActivity extends Activity {
             protected void onDraw(Canvas c) {
                 super.onDraw(c);
 
+                if (ballX < 0 || ballY < 0) {
+                    paint.setColor(Color.YELLOW);
+                    paint.setTextSize(30);
+                    c.drawText(
+                            "Searching Cue Ball...",
+                            40, 60, paint);
+                    return;
+                }
+
+                float x = ballX * getWidth() / screenW;
+                float y = ballY * getHeight() / screenH;
+
                 paint.setColor(Color.GREEN);
                 paint.setStrokeWidth(6);
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setPathEffect(
-                    new DashPathEffect(new float[]{18, 12}, 0)
-                );
+                        new DashPathEffect(
+                                new float[]{18, 12}, 0));
 
-                float x = getWidth() / 2f;
-                float y1 = getHeight() * 0.88f;
-                float y2 = getHeight() * 0.18f;
-
-                c.drawLine(x, y1, x, y2, paint);
+                c.drawLine(x, y, x, 20, paint);
 
                 paint.setPathEffect(null);
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(5);
+                c.drawCircle(x, y, 17, paint);
+
                 paint.setStyle(Paint.Style.FILL);
-                c.drawCircle(x, y2, 9, paint);
+                paint.setTextSize(25);
+                c.drawText("Cue Ball", x + 22, y - 15, paint);
             }
         };
 
         int type = Build.VERSION.SDK_INT >= 26
-            ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            : WindowManager.LayoutParams.TYPE_PHONE;
+                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                : WindowManager.LayoutParams.TYPE_PHONE;
 
         WindowManager.LayoutParams p =
-            new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                    | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                    | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT
-            );
+                new WindowManager.LayoutParams(
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        type,
+                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                                | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                        PixelFormat.TRANSLUCENT);
 
         wm.addView(aimLine, p);
         aimVisible = true;
     }
 
     void hideAimLine() {
+
         if (aimLine != null && wm != null) {
             try {
                 wm.removeView(aimLine);
@@ -281,6 +320,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+
         hideAimLine();
 
         if (bubble != null && wm != null) {
@@ -289,6 +329,10 @@ public class MainActivity extends Activity {
             } catch (Exception e) {}
             bubble = null;
         }
+
+        try {
+            unregisterReceiver(ballReceiver);
+        } catch (Exception e) {}
 
         super.onDestroy();
     }
