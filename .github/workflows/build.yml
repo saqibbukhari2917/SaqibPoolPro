@@ -34,7 +34,9 @@ jobs:
           mkdir -p app/src/main/java/com/saqib/poolpro
           mkdir -p app/src/main
 
-          cp MainActivity.java app/src/main/java/com/saqib/poolpro/cp AimCaptureService.java app/src/main/java/com/saqib/poolpro/
+cp MainActivity.java app/src/main/java/com/saqib/poolpro/
+cp AimCaptureService.java app/src/main/java/com/saqib/poolpro/
+      
           cp AndroidManifest.xml app/src/main/
 
           cat > settings.gradle <<'EOF'
