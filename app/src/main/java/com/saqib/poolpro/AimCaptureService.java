@@ -183,11 +183,11 @@ public class AimCaptureService extends Service {
         int[] queue = new int[gw * gh];
 
         // Search inside the pool table area.
-        int minGX = (int)(gw * 0.08f);
-        int maxGX = (int)(gw * 0.94f);
+       int minGX = (int)(gw * 0.17f);
+int maxGX = (int)(gw * 0.84f);
 
-        int minGY = (int)(gh * 0.20f);
-        int maxGY = (int)(gh * 0.97f);
+int minGY = (int)(gh * 0.17f);
+int maxGY = (int)(gh * 0.97f); 
 
         int bestX = -1;
         int bestY = -1;
