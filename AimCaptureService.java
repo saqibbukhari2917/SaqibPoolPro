@@ -1,3 +1,4 @@
+
 package com.saqib.poolpro;
 
 import android.app.*;
@@ -22,28 +23,53 @@ public class AimCaptureService extends Service {
     private MediaProjection projection;
     private VirtualDisplay virtualDisplay;
     private ImageReader imageReader;
+
     private HandlerThread worker;
     private Handler workerHandler;
 
-    private int lastX = -1, lastY = -1;
+    private int lastX = -1;
+    private int lastY = -1;
+    private long lastProcessTime = 0;
+
+    private static final int STEP = 2;
 
     @Override
     public void onCreate() {
         super.onCreate();
+
         createNotificationChannel();
+
         worker = new HandlerThread("BallDetector");
         worker.start();
+
         workerHandler = new Handler(worker.getLooper());
     }
 
     @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        Notification notification =
-                new Notification.Builder(this, "pool_capture")
-                        .setContentTitle("Saqib Pool Pro")
-                        .setContentText("Screen capture is active")
-                        .setSmallIcon(android.R.drawable.ic_menu_camera)
-                        .build();
+    public int onStartCommand(
+            Intent intent, int flags, int startId) {
+
+        if (intent == null) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
+        Notification notification;
+
+        if (Build.VERSION.SDK_INT >= 26) {
+            notification = new Notification.Builder(
+                    this, "pool_capture")
+                    .setContentTitle("Saqib Pool Pro")
+                    .setContentText("White ball detection active")
+                    .setSmallIcon(android.R.drawable.ic_menu_camera)
+                    .build();
+        } else {
+            notification = new Notification.Builder(this)
+                    .setContentTitle("Saqib Pool Pro")
+                    .setContentText("Ball detection active")
+                    .setSmallIcon(android.R.drawable.ic_menu_camera)
+                    .build();
+        }
 
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(7, notification,
@@ -52,16 +78,14 @@ public class AimCaptureService extends Service {
             startForeground(7, notification);
         }
 
-        if (intent == null) {
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-
-        int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
+        int resultCode = intent.getIntExtra(
+                EXTRA_RESULT_CODE, 0);
 
         Intent data;
+
         if (Build.VERSION.SDK_INT >= 33) {
-            data = intent.getParcelableExtra(EXTRA_DATA, Intent.class);
+            data = intent.getParcelableExtra(
+                    EXTRA_DATA, Intent.class);
         } else {
             data = intent.getParcelableExtra(EXTRA_DATA);
         }
@@ -75,26 +99,30 @@ public class AimCaptureService extends Service {
                 (MediaProjectionManager)
                         getSystemService(MEDIA_PROJECTION_SERVICE);
 
-        projection = manager.getMediaProjection(resultCode, data);
+        projection = manager.getMediaProjection(
+                resultCode, data);
 
         if (projection == null) {
             stopSelf();
             return START_NOT_STICKY;
         }
 
-        projection.registerCallback(new MediaProjection.Callback() {
-            @Override
-            public void onStop() {
-                releaseCapture(false);
-                stopSelf();
-            }
-        }, workerHandler);
+        projection.registerCallback(
+                new MediaProjection.Callback() {
+                    @Override
+                    public void onStop() {
+                        releaseCapture(false);
+                        stopSelf();
+                    }
+                }, workerHandler);
 
         startCapture();
+
         return START_NOT_STICKY;
     }
 
     private void startCapture() {
+
         WindowManager wm =
                 (WindowManager) getSystemService(WINDOW_SERVICE);
 
@@ -105,96 +133,150 @@ public class AimCaptureService extends Service {
         int height = dm.heightPixels;
 
         imageReader = ImageReader.newInstance(
-                width, height, PixelFormat.RGBA_8888, 2);
+                width,
+                height,
+                PixelFormat.RGBA_8888,
+                2
+        );
 
-        imageReader.setOnImageAvailableListener(reader -> {
-            Image image = reader.acquireLatestImage();
-            if (image != null) {
-                try {
-                    detectBall(image);
-                } finally {
-                    image.close();
-                }
-            }
-        }, workerHandler);
+        imageReader.setOnImageAvailableListener(
+                reader -> {
+
+                    Image image = reader.acquireLatestImage();
+
+                    if (image == null) return;
+
+                    try {
+                        long now = System.currentTimeMillis();
+
+                        if (now - lastProcessTime >= 100) {
+                            lastProcessTime = now;
+                            detectBall(image);
+                        }
+
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    } finally {
+                        image.close();
+                    }
+
+                }, workerHandler
+        );
 
         virtualDisplay = projection.createVirtualDisplay(
                 "SaqibPoolProCapture",
-                width, height, dm.densityDpi,
+                width,
+                height,
+                dm.densityDpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader.getSurface(), null, workerHandler);
+                imageReader.getSurface(),
+                null,
+                workerHandler
+        );
     }
 
     private void detectBall(Image image) {
+
         Image.Plane[] planes = image.getPlanes();
+
         if (planes.length == 0) return;
 
         ByteBuffer buffer = planes[0].getBuffer();
+
         int rowStride = planes[0].getRowStride();
         int pixelStride = planes[0].getPixelStride();
 
         int width = image.getWidth();
         int height = image.getHeight();
 
-        int step = 2;
-        int gw = width / step;
-        int gh = height / step;
+        int gw = width / STEP;
+        int gh = height / STEP;
 
         boolean[] visited = new boolean[gw * gh];
         int[] queue = new int[gw * gh];
 
-        int bestX = -1, bestY = -1;
+        int minGX = (int)(gw * 0.10f);
+        int maxGX = (int)(gw * 0.92f);
+
+        int minGY = (int)(gh * 0.10f);
+        int maxGY = (int)(gh * 0.96f);
+
+        int bestX = -1;
+        int bestY = -1;
+
         double bestScore = -1;
 
-        // Pool table ka andazati area: screen ke darmiyani hissa.
-        int minGX = (int)(gw * 0.15f);
-        int maxGX = (int)(gw * 0.86f);
-        int minGY = (int)(gh * 0.15f);
-        int maxGY = (int)(gh * 0.98f);
+        int minDiameter = Math.max(5, (int)(gw * 0.012f));
+        int maxDiameter = Math.max(20, (int)(gw * 0.075f));
 
         for (int gy = minGY; gy < maxGY; gy++) {
+
             for (int gx = minGX; gx < maxGX; gx++) {
+
                 int index = gy * gw + gx;
 
-                if (visited[index] ||
-                        !isWhite(buffer, gx * step, gy * step,
-                                rowStride, pixelStride)) {
+                if (visited[index]) continue;
+
+                if (!isWhite(buffer,
+                        gx * STEP,
+                        gy * STEP,
+                        rowStride,
+                        pixelStride)) {
                     continue;
                 }
 
-                int head = 0, tail = 0;
+                int head = 0;
+                int tail = 0;
+
                 queue[tail++] = index;
                 visited[index] = true;
 
-                int minX = gx, maxX = gx;
-                int minY = gy, maxY = gy;
+                int minX = gx;
+                int maxX = gx;
+                int minY = gy;
+                int maxY = gy;
+
+                long sumX = 0;
+                long sumY = 0;
+
                 int count = 0;
-                long sumX = 0, sumY = 0;
 
                 while (head < tail) {
+
                     int current = queue[head++];
+
                     int x = current % gw;
                     int y = current / gw;
 
                     count++;
+
                     sumX += x;
                     sumY += y;
 
                     minX = Math.min(minX, x);
                     maxX = Math.max(maxX, x);
+
                     minY = Math.min(minY, y);
                     maxY = Math.max(maxY, y);
 
                     for (int yy = y - 1; yy <= y + 1; yy++) {
+
                         for (int xx = x - 1; xx <= x + 1; xx++) {
+
                             if (xx < minGX || xx >= maxGX ||
-                                    yy < minGY || yy >= maxGY) continue;
+                                    yy < minGY || yy >= maxGY) {
+                                continue;
+                            }
 
                             int ni = yy * gw + xx;
 
                             if (!visited[ni] &&
-                                    isWhite(buffer, xx * step, yy * step,
-                                            rowStride, pixelStride)) {
+                                    isWhite(buffer,
+                                            xx * STEP,
+                                            yy * STEP,
+                                            rowStride,
+                                            pixelStride)) {
+
                                 visited[ni] = true;
                                 queue[tail++] = ni;
                             }
@@ -205,57 +287,79 @@ public class AimCaptureService extends Service {
                 int bw = maxX - minX + 1;
                 int bh = maxY - minY + 1;
 
-                // Pool ball ke qareeb gol size ko tarjeeh.
-                if (count < 18 || count > 350 ||
-                        bw < 7 || bh < 7 ||
-                        bw > 25 || bh > 25) continue;
+                if (bw < minDiameter || bh < minDiameter ||
+                        bw > maxDiameter || bh > maxDiameter) {
+                    continue;
+                }
 
-                float ratio = (float)bw / (float)bh;
-                if (ratio < 0.72f || ratio > 1.38f) continue;
+                float ratio = (float)bw / bh;
 
-                float fill = (float)count / (float)(bw * bh);
-                if (fill < 0.35f) continue;
+                if (ratio < 0.78f || ratio > 1.28f) {
+                    continue;
+                }
 
-                int cx = (int)(sumX / count) * step;
-                int cy = (int)(sumY / count) * step;
+                float fill = (float)count / (bw * bh);
 
-                double roundScore = 1.0 -
-                        Math.abs(1.0 - ratio);
+                if (fill < 0.48f) continue;
+
+                int cx = (int)(sumX / count) * STEP;
+                int cy = (int)(sumY / count) * STEP;
+
+                double roundScore =
+                        1.0 - Math.abs(1.0 - ratio);
 
                 double score = count * fill * roundScore;
 
                 if (lastX >= 0 && lastY >= 0) {
+
                     double distance = Math.hypot(
-                            cx - lastX, cy - lastY);
-                    score /= (1.0 + distance / 250.0);
+                            cx - lastX,
+                            cy - lastY);
+
+                    score /= (1.0 + distance / (width * 0.30));
                 }
 
                 if (score > bestScore) {
+
                     bestScore = score;
+
                     bestX = cx;
                     bestY = cy;
                 }
             }
         }
 
-        if (bestX >= 0) {
+        if (bestX >= 0 && bestY >= 0) {
+
             lastX = bestX;
             lastY = bestY;
 
             Intent update = new Intent(ACTION_BALL);
+
             update.setPackage(getPackageName());
+
             update.putExtra("x", (float)bestX);
             update.putExtra("y", (float)bestY);
+
             update.putExtra("width", width);
             update.putExtra("height", height);
+
             sendBroadcast(update);
         }
     }
 
-    private boolean isWhite(ByteBuffer buffer, int x, int y,
-                            int rowStride, int pixelStride) {
+    private boolean isWhite(
+            ByteBuffer buffer,
+            int x,
+            int y,
+            int rowStride,
+            int pixelStride) {
+
         int pos = y * rowStride + x * pixelStride;
-        if (pos < 0 || pos + 2 >= buffer.limit()) return false;
+
+        if (pos < 0 || pos + 2 >= buffer.limit()) {
+            return false;
+        }
 
         int r = buffer.get(pos) & 255;
         int g = buffer.get(pos + 1) & 255;
@@ -264,11 +368,14 @@ public class AimCaptureService extends Service {
         int max = Math.max(r, Math.max(g, b));
         int min = Math.min(r, Math.min(g, b));
 
-        return r > 200 && g > 200 && b > 200 &&
-                max - min < 45;
+        return r > 205 &&
+                g > 205 &&
+                b > 205 &&
+                max - min < 40;
     }
 
     private void releaseCapture(boolean stopProjection) {
+
         if (virtualDisplay != null) {
             virtualDisplay.release();
             virtualDisplay = null;
@@ -281,18 +388,26 @@ public class AimCaptureService extends Service {
         }
 
         if (projection != null) {
+
             MediaProjection old = projection;
             projection = null;
-            if (stopProjection) old.stop();
+
+            if (stopProjection) {
+                old.stop();
+            }
         }
     }
 
     private void createNotificationChannel() {
+
         if (Build.VERSION.SDK_INT >= 26) {
+
             NotificationChannel channel =
-                    new NotificationChannel("pool_capture",
+                    new NotificationChannel(
+                            "pool_capture",
                             "Pool Pro Screen Capture",
-                            NotificationManager.IMPORTANCE_LOW);
+                            NotificationManager.IMPORTANCE_LOW
+                    );
 
             getSystemService(NotificationManager.class)
                     .createNotificationChannel(channel);
@@ -301,8 +416,13 @@ public class AimCaptureService extends Service {
 
     @Override
     public void onDestroy() {
+
         releaseCapture(true);
-        if (worker != null) worker.quitSafely();
+
+        if (worker != null) {
+            worker.quitSafely();
+        }
+
         super.onDestroy();
     }
 
@@ -310,4 +430,4 @@ public class AimCaptureService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-            }
+                }
