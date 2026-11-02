@@ -70,6 +70,15 @@ jobs:
           }
           EOF
 
+      
+      - name: Check Android Manifest
+        run: |
+          echo "----- MANIFEST CONTENT -----"
+          cat -n app/src/main/AndroidManifest.xml
+
+          echo "----- XML VALIDATION -----"
+          python3 -c "import xml.etree.ElementTree as ET; ET.parse('app/src/main/AndroidManifest.xml'); print('XML is valid')"
+          
       - name: Build APK
         run: gradle --no-daemon assembleDebug
 
