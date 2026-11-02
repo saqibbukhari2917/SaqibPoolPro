@@ -17,6 +17,7 @@ public class MainActivity extends Activity {
     TextView bubble;
     View aimLine;
     MediaProjectionManager projectionManager;
+
     int powerValue = 50;
     boolean aimVisible = false;
 
@@ -90,18 +91,63 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(
         int requestCode, int resultCode, Intent data) {
+
         super.onActivityResult(requestCode, resultCode, data);
 
-        if (requestCode == CAPTURE_REQUEST) {
-            if (resultCode == RESULT_OK && data != null) {
+        if (requestCode != CAPTURE_REQUEST) return;
+
+        if (resultCode == RESULT_OK && data != null) {
+
+            Intent serviceIntent =
+                new Intent(this, AimCaptureService.class);
+
+            serviceIntent.putExtra(
+                AimCaptureService.EXTRA_RESULT_CODE,
+                resultCode
+            );
+
+            serviceIntent.putExtra(
+                AimCaptureService.EXTRA_DATA,
+                data
+            );
+
+            try {
+                if (Build.VERSION.SDK_INT >= 26) {
+                    startForegroundService(serviceIntent);
+                } else {
+                    startService(serviceIntent);
+                }
+
                 Toast.makeText(this,
-                    "Screen capture permission granted!",
+                    "Screen capture service started",
                     Toast.LENGTH_LONG).show();
-            } else {
+
+                // Open 8 Ball Pool after starting capture
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    Intent game = getPackageManager()
+                        .getLaunchIntentForPackage(
+                            "com.miniclip.eightballpool"
+                        );
+
+                    if (game != null) {
+                        startActivity(game);
+                    } else {
+                        Toast.makeText(this,
+                            "8 Ball Pool not found",
+                            Toast.LENGTH_LONG).show();
+                    }
+                }, 1000);
+
+            } catch (Exception e) {
                 Toast.makeText(this,
-                    "Screen capture permission not granted",
+                    "Capture error: " + e.getMessage(),
                     Toast.LENGTH_LONG).show();
             }
+
+        } else {
+            Toast.makeText(this,
+                "Screen capture permission denied",
+                Toast.LENGTH_LONG).show();
         }
     }
 
@@ -125,6 +171,7 @@ public class MainActivity extends Activity {
         bubble.setGravity(Gravity.CENTER);
         bubble.setPadding(18, 14, 18, 14);
         bubble.setBackgroundColor(Color.rgb(20, 110, 70));
+
         updateBubble();
 
         bubble.setOnClickListener(v -> {
@@ -165,19 +212,7 @@ public class MainActivity extends Activity {
         if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(this,
                 "Allow overlay permission first",
-                Toast.LENGTH_SHORT).show();new Handler().postDelayed(() -> {
-    Intent game = getPackageManager()
-        .getLaunchIntentForPackage("com.miniclip.eightballpool");
-
-    if (game != null) {
-        game.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        startActivity(game);
-    } else {
-        Toast.makeText(this,
-            "8 Ball Pool installed nahi hai",
-            Toast.LENGTH_LONG).show();
-    }
-}, 1000);
+                Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -240,6 +275,7 @@ public class MainActivity extends Activity {
 
             aimLine = null;
         }
+
         aimVisible = false;
     }
 
