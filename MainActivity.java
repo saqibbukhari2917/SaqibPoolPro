@@ -165,7 +165,19 @@ public class MainActivity extends Activity {
         if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(this,
                 "Allow overlay permission first",
-                Toast.LENGTH_SHORT).show();
+                Toast.LENGTH_SHORT).show();new Handler().postDelayed(() -> {
+    Intent game = getPackageManager()
+        .getLaunchIntentForPackage("com.miniclip.eightballpool");
+
+    if (game != null) {
+        game.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(game);
+    } else {
+        Toast.makeText(this,
+            "8 Ball Pool installed nahi hai",
+            Toast.LENGTH_LONG).show();
+    }
+}, 1000);
             return;
         }
 
