@@ -20,5 +20,10 @@
 
         </activity>
 
+        <service
+            android:name=".AimCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
     </application>
 </manifest>
