@@ -9,6 +9,7 @@ import android.provider.Settings;
 import android.view.*;
 import android.widget.*;
 import android.graphics.*;
+import android.media.projection.*;
 
 public class MainActivity extends Activity {
 
@@ -18,8 +19,18 @@ public class MainActivity extends Activity {
     SeekBar powerBar;
     int power = 50;
 
+    MediaProjectionManager projectionManager;
+    MediaProjection mediaProjection;
+
+    static final int SCREEN_CAPTURE_REQUEST = 1001;
+
     public void onCreate(Bundle b) {
         super.onCreate(b);
+
+        projectionManager =
+            (MediaProjectionManager)getSystemService(
+                Context.MEDIA_PROJECTION_SERVICE
+            );
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(1);
@@ -29,11 +40,6 @@ public class MainActivity extends Activity {
         title.setText("Saqib Pool Pro");
         title.setTextSize(26);
         layout.addView(title);
-
-        TextView info = new TextView(this);
-        info.setText("Shot Power / Speed Setting");
-        info.setTextSize(18);
-        layout.addView(info);
 
         powerText = new TextView(this);
         powerText.setText("Power: 50%");
@@ -58,6 +64,17 @@ public class MainActivity extends Activity {
             }
         );
 
+        Button capture = new Button(this);
+        capture.setText("Allow Screen Capture");
+        capture.setOnClickListener(v -> {
+            Intent intent =
+                projectionManager.createScreenCaptureIntent();
+            startActivityForResult(
+                intent, SCREEN_CAPTURE_REQUEST
+            );
+        });
+        layout.addView(capture);
+
         Button show = new Button(this);
         show.setText("Show Floating Button");
         show.setOnClickListener(v -> {
@@ -71,9 +88,36 @@ public class MainActivity extends Activity {
                 showBubble();
             }
         });
-
         layout.addView(show);
+
         setContentView(layout);
+    }
+
+    protected void onActivityResult(
+        int requestCode, int resultCode, Intent data) {
+
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == SCREEN_CAPTURE_REQUEST) {
+            if (resultCode == RESULT_OK && data != null) {
+                mediaProjection =
+                    projectionManager.getMediaProjection(
+                        resultCode, data
+                    );
+
+                Toast.makeText(
+                    this,
+                    "Screen capture permission granted!",
+                    Toast.LENGTH_LONG
+                ).show();
+            } else {
+                Toast.makeText(
+                    this,
+                    "Screen capture permission denied",
+                    Toast.LENGTH_LONG
+                ).show();
+            }
+        }
     }
 
     void showBubble() {
@@ -85,7 +129,7 @@ public class MainActivity extends Activity {
         bubbleText.setTextColor(Color.WHITE);
         bubbleText.setGravity(Gravity.CENTER);
         bubbleText.setPadding(18, 14, 18, 14);
-        bubbleText.setBackgroundColor(Color.rgb(20, 110, 70));
+        bubbleText.setBackgroundColor(Color.rgb(20,110,70));
 
         updateBubble();
 
@@ -118,6 +162,12 @@ public class MainActivity extends Activity {
 
     protected void onDestroy() {
         super.onDestroy();
+
+        if (mediaProjection != null) {
+            mediaProjection.stop();
+            mediaProjection = null;
+        }
+
         if (bubble != null && wm != null) {
             try {
                 wm.removeView(bubble);
@@ -125,4 +175,4 @@ public class MainActivity extends Activity {
             bubble = null;
         }
     }
-}
+    }
