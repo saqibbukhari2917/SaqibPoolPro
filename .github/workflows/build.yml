@@ -78,4 +78,3 @@ jobs:
         with:
           name: Saqib-Pool-Pro
           path: app/build/outputs/apk/debug/app-debug.apk
-          
