@@ -1,274 +1,216 @@
-
 package com.saqib.poolpro;
 
-import android.app.*;
-import android.os.*;
-import android.content.*;
-import android.graphics.*;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.Service;
+import android.content.Intent;
+import android.content.pm.ServiceInfo;
+import android.graphics.PixelFormat;
+import android.hardware.display.DisplayManager;
+import android.hardware.display.VirtualDisplay;
+import android.media.Image;
+import android.media.ImageReader;
+import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
-import android.provider.Settings;
-import android.net.Uri;
-import android.view.*;
-import android.widget.*;
+import android.os.Build;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import android.util.DisplayMetrics;
+import android.view.Display;
+import android.view.WindowManager;
 
-public class MainActivity extends Activity {
+public class AimCaptureService extends Service {
 
-    WindowManager wm;
-    TextView bubble;
-    View aimLine;
-    MediaProjectionManager projectionManager;
+    public static final String EXTRA_RESULT_CODE = "resultCode";
+    public static final String EXTRA_DATA = "projectionData";
 
-    int powerValue = 50;
-    boolean aimVisible = false;
+    private MediaProjection projection;
+    private VirtualDisplay virtualDisplay;
+    private ImageReader imageReader;
 
-    static final int CAPTURE_REQUEST = 1001;
+    private final Handler handler = new Handler(Looper.getMainLooper());
 
     @Override
-    public void onCreate(Bundle b) {
-        super.onCreate(b);
+    public void onCreate() {
+        super.onCreate();
+        createNotificationChannel();
+    }
 
-        projectionManager = (MediaProjectionManager)
-            getSystemService(MEDIA_PROJECTION_SERVICE);
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
 
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(1);
-        layout.setPadding(24, 35, 24, 24);
+        Notification notification;
 
-        TextView title = new TextView(this);
-        title.setText("Saqib Pool Pro");
-        title.setTextSize(26);
-        layout.addView(title);
+        if (Build.VERSION.SDK_INT >= 26) {
+            notification = new Notification.Builder(this, "pool_capture")
+                    .setContentTitle("Saqib Pool Pro")
+                    .setContentText("Screen capture is active")
+                    .setSmallIcon(android.R.drawable.ic_menu_camera)
+                    .build();
+        } else {
+            notification = new Notification.Builder(this)
+                    .setContentTitle("Saqib Pool Pro")
+                    .setContentText("Screen capture is active")
+                    .setSmallIcon(android.R.drawable.ic_menu_camera)
+                    .build();
+        }
 
-        TextView powerText = new TextView(this);
-        powerText.setText("Power: 50%");
-        layout.addView(powerText);
+        if (Build.VERSION.SDK_INT >= 29) {
+            startForeground(
+                    7,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            );
+        } else {
+            startForeground(7, notification);
+        }
 
-        SeekBar power = new SeekBar(this);
-        power.setMax(100);
-        power.setProgress(50);
+        if (intent == null) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
 
-        power.setOnSeekBarChangeListener(
-            new SeekBar.OnSeekBarChangeListener() {
-                public void onProgressChanged(
-                    SeekBar s, int value, boolean user) {
-                    powerValue = value;
-                    powerText.setText("Power: " + value + "%");
-                    updateBubble();
-                }
-                public void onStartTrackingTouch(SeekBar s) {}
-                public void onStopTrackingTouch(SeekBar s) {}
-            }
+        int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
+
+        Intent permissionData;
+
+        if (Build.VERSION.SDK_INT >= 33) {
+            permissionData = intent.getParcelableExtra(
+                    EXTRA_DATA, Intent.class
+            );
+        } else {
+            permissionData = intent.getParcelableExtra(EXTRA_DATA);
+        }
+
+        if (permissionData == null) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
+        MediaProjectionManager manager =
+                (MediaProjectionManager) getSystemService(
+                        MEDIA_PROJECTION_SERVICE
+                );
+
+        projection = manager.getMediaProjection(
+                resultCode, permissionData
         );
-        layout.addView(power);
 
-        Button capture = new Button(this);
-        capture.setText("Allow Screen Capture");
-        capture.setOnClickListener(v -> {
-            Intent intent =
-                projectionManager.createScreenCaptureIntent();
-            startActivityForResult(intent, CAPTURE_REQUEST);
-        });
-        layout.addView(capture);
+        if (projection == null) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
 
-        Button floating = new Button(this);
-        floating.setText("Show Floating Button");
-        floating.setOnClickListener(v -> showBubble());
-        layout.addView(floating);
-
-        Button showAim = new Button(this);
-        showAim.setText("Show Aim Line");
-        showAim.setOnClickListener(v -> showAimLine());
-        layout.addView(showAim);
-
-        Button hideAim = new Button(this);
-        hideAim.setText("Hide Aim Line");
-        hideAim.setOnClickListener(v -> hideAimLine());
-        layout.addView(hideAim);
-
-        setContentView(layout);
-    }
-
-    @Override
-    protected void onActivityResult(
-        int requestCode, int resultCode, Intent data) {
-
-        super.onActivityResult(requestCode, resultCode, data);
-
-        if (requestCode == CAPTURE_REQUEST) {
-            if (resultCode == RESULT_OK && data != null) {
-
-                Intent serviceIntent =
-                    new Intent(this, AimCaptureService.class);
-
-                serviceIntent.putExtra(
-                    AimCaptureService.EXTRA_RESULT_CODE,
-                    resultCode
-                );
-
-                serviceIntent.putExtra(
-                    AimCaptureService.EXTRA_DATA,
-                    data
-                );
-
-                try {
-                    if (Build.VERSION.SDK_INT >= 26) {
-                        startForegroundService(serviceIntent);
-                    } else {
-                        startService(serviceIntent);
+        projection.registerCallback(
+                new MediaProjection.Callback() {
+                    @Override
+                    public void onStop() {
+                        releaseCapture(false);
+                        stopSelf();
                     }
+                },
+                handler
+        );
 
-                    Toast.makeText(this,
-                        "Screen capture service started",
-                        Toast.LENGTH_LONG).show();
+        startCapture();
 
-                } catch (Exception e) {
-                    Toast.makeText(this,
-                        "Service error: " + e.getMessage(),
-                        Toast.LENGTH_LONG).show();
-                }
+        return START_NOT_STICKY;
+    }
 
-            } else {
-                Toast.makeText(this,
-                    "Screen capture permission denied",
-                    Toast.LENGTH_LONG).show();
+    private void startCapture() {
+
+        WindowManager windowManager =
+                (WindowManager) getSystemService(WINDOW_SERVICE);
+
+        DisplayMetrics metrics = new DisplayMetrics();
+        Display display = windowManager.getDefaultDisplay();
+        display.getRealMetrics(metrics);
+
+        int width = metrics.widthPixels;
+        int height = metrics.heightPixels;
+        int density = metrics.densityDpi;
+
+        imageReader = ImageReader.newInstance(
+                width,
+                height,
+                PixelFormat.RGBA_8888,
+                2
+        );
+
+        imageReader.setOnImageAvailableListener(reader -> {
+
+            Image image = reader.acquireLatestImage();
+
+            if (image != null) {
+                // Screen frame received.
+                // Ball detection will be added later.
+                image.close();
+            }
+
+        }, handler);
+
+        virtualDisplay = projection.createVirtualDisplay(
+                "SaqibPoolProCapture",
+                width,
+                height,
+                density,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader.getSurface(),
+                null,
+                handler
+        );
+    }
+
+    private void releaseCapture(boolean stopProjection) {
+
+        if (virtualDisplay != null) {
+            virtualDisplay.release();
+            virtualDisplay = null;
+        }
+
+        if (imageReader != null) {
+            imageReader.setOnImageAvailableListener(null, null);
+            imageReader.close();
+            imageReader = null;
+        }
+
+        if (projection != null) {
+            MediaProjection oldProjection = projection;
+            projection = null;
+
+            if (stopProjection) {
+                oldProjection.stop();
             }
         }
     }
 
-    void showBubble() {
-        if (!Settings.canDrawOverlays(this)) {
-            Intent i = new Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:" + getPackageName())
-            );
-            startActivity(i);
-            return;
-        }
+    private void createNotificationChannel() {
 
-        if (bubble != null) return;
+        if (Build.VERSION.SDK_INT >= 26) {
 
-        wm = (WindowManager)getSystemService(WINDOW_SERVICE);
-
-        bubble = new TextView(this);
-        bubble.setTextColor(Color.WHITE);
-        bubble.setTextSize(14);
-        bubble.setGravity(Gravity.CENTER);
-        bubble.setPadding(18, 14, 18, 14);
-        bubble.setBackgroundColor(Color.rgb(20, 110, 70));
-        updateBubble();
-
-        bubble.setOnClickListener(v -> {
-            if (aimVisible) hideAimLine();
-            else showAimLine();
-        });
-
-        int type = Build.VERSION.SDK_INT >= 26
-            ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            : WindowManager.LayoutParams.TYPE_PHONE;
-
-        WindowManager.LayoutParams p =
-            new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT
+            NotificationChannel channel = new NotificationChannel(
+                    "pool_capture",
+                    "Pool Pro Screen Capture",
+                    NotificationManager.IMPORTANCE_LOW
             );
 
-        p.gravity = Gravity.TOP | Gravity.END;
-        p.x = 25;
-        p.y = 200;
+            NotificationManager manager =
+                    getSystemService(NotificationManager.class);
 
-        wm.addView(bubble, p);
-    }
-
-    void updateBubble() {
-        if (bubble != null) {
-            bubble.setText("POOL PRO\nPower " + powerValue + "%");
+            manager.createNotificationChannel(channel);
         }
-    }
-
-    void showAimLine() {
-        if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(this,
-                "Allow overlay permission first",
-                Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        if (aimLine != null) return;
-
-        if (wm == null) {
-            wm = (WindowManager)getSystemService(WINDOW_SERVICE);
-        }
-
-        aimLine = new View(this) {
-            Paint paint = new Paint(3);
-
-            @Override
-            protected void onDraw(Canvas c) {
-                super.onDraw(c);
-
-                paint.setColor(Color.GREEN);
-                paint.setStrokeWidth(6);
-                paint.setStyle(Paint.Style.STROKE);
-                paint.setPathEffect(
-                    new DashPathEffect(new float[]{18, 12}, 0)
-                );
-
-                float x = getWidth() / 2f;
-                float y1 = getHeight() * 0.88f;
-                float y2 = getHeight() * 0.18f;
-
-                c.drawLine(x, y1, x, y2, paint);
-
-                paint.setPathEffect(null);
-                paint.setStyle(Paint.Style.FILL);
-                c.drawCircle(x, y2, 9, paint);
-            }
-        };
-
-        int type = Build.VERSION.SDK_INT >= 26
-            ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            : WindowManager.LayoutParams.TYPE_PHONE;
-
-        WindowManager.LayoutParams p =
-            new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                    | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                    | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT
-            );
-
-        wm.addView(aimLine, p);
-        aimVisible = true;
-    }
-
-    void hideAimLine() {
-        if (aimLine != null && wm != null) {
-            try {
-                wm.removeView(aimLine);
-            } catch (Exception e) {}
-
-            aimLine = null;
-        }
-        aimVisible = false;
     }
 
     @Override
-    protected void onDestroy() {
-        hideAimLine();
-
-        if (bubble != null && wm != null) {
-            try {
-                wm.removeView(bubble);
-            } catch (Exception e) {}
-            bubble = null;
-        }
-
+    public void onDestroy() {
+        releaseCapture(true);
         super.onDestroy();
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
     }
 }
