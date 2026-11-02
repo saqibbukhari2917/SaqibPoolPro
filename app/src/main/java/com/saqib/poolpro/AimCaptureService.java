@@ -1,407 +1,130 @@
 
-package com.saqib.poolpro;
+private void detectBall(Image image) {
 
-import android.app.*;
-import android.content.*;
-import android.content.pm.ServiceInfo;
-import android.graphics.PixelFormat;
-import android.hardware.display.*;
-import android.media.*;
-import android.media.projection.*;
-import android.os.*;
-import android.util.DisplayMetrics;
-import android.view.*;
+    Image.Plane[] planes = image.getPlanes();
+    if (planes.length == 0) return;
 
-import java.nio.ByteBuffer;
+    ByteBuffer buffer = planes[0].getBuffer();
 
-public class AimCaptureService extends Service {
+    int rowStride = planes[0].getRowStride();
+    int pixelStride = planes[0].getPixelStride();
 
-    public static final String EXTRA_RESULT_CODE = "resultCode";
-    public static final String EXTRA_DATA = "projectionData";
-    public static final String ACTION_BALL =
-            "com.saqib.poolpro.BALL_POSITION";
+    int width = image.getWidth();
+    int height = image.getHeight();
 
-    private MediaProjection projection;
-    private VirtualDisplay virtualDisplay;
-    private ImageReader imageReader;
+    // Pool table search area
+    int minX = (int)(width * 0.17f);
+    int maxX = (int)(width * 0.84f);
+    int minY = (int)(height * 0.17f);
+    int maxY = (int)(height * 0.97f);
 
-    private HandlerThread worker;
-    private Handler workerHandler;
+    int radius = Math.max(8, (int)(width * 0.009f));
 
-    private long lastProcessTime = 0;
+    int bestX = -1;
+    int bestY = -1;
+    int bestScore = -1;
 
-    private static final int STEP = 2;
+    // Search for the small red center marker
+    for (int y = minY + radius; y < maxY - radius; y += 2) {
 
-    @Override
-    public void onCreate() {
-        super.onCreate();
+        for (int x = minX + radius; x < maxX - radius; x += 2) {
 
-        createNotificationChannel();
-
-        worker = new HandlerThread("BallDetector");
-        worker.start();
-
-        workerHandler = new Handler(worker.getLooper());
-    }
-
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-
-        if (intent == null) {
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-
-        Notification notification;
-
-        if (Build.VERSION.SDK_INT >= 26) {
-            notification = new Notification.Builder(this, "pool_capture")
-                    .setContentTitle("Saqib Pool Pro")
-                    .setContentText("White ball detection active")
-                    .setSmallIcon(android.R.drawable.ic_menu_camera)
-                    .build();
-        } else {
-            notification = new Notification.Builder(this)
-                    .setContentTitle("Saqib Pool Pro")
-                    .setContentText("White ball detection active")
-                    .setSmallIcon(android.R.drawable.ic_menu_camera)
-                    .build();
-        }
-
-        if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(7, notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
-        } else {
-            startForeground(7, notification);
-        }
-
-        int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
-
-        Intent data;
-
-        if (Build.VERSION.SDK_INT >= 33) {
-            data = intent.getParcelableExtra(EXTRA_DATA, Intent.class);
-        } else {
-            data = intent.getParcelableExtra(EXTRA_DATA);
-        }
-
-        if (data == null) {
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-
-        MediaProjectionManager manager =
-                (MediaProjectionManager)
-                        getSystemService(MEDIA_PROJECTION_SERVICE);
-
-        projection = manager.getMediaProjection(resultCode, data);
-
-        if (projection == null) {
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-
-        projection.registerCallback(
-                new MediaProjection.Callback() {
-                    @Override
-                    public void onStop() {
-                        releaseCapture(false);
-                        stopSelf();
-                    }
-                }, workerHandler);
-
-        startCapture();
-
-        return START_NOT_STICKY;
-    }
-
-    private void startCapture() {
-
-        WindowManager wm =
-                (WindowManager) getSystemService(WINDOW_SERVICE);
-
-        DisplayMetrics dm = new DisplayMetrics();
-        wm.getDefaultDisplay().getRealMetrics(dm);
-
-        int width = dm.widthPixels;
-        int height = dm.heightPixels;
-
-        imageReader = ImageReader.newInstance(
-                width, height, PixelFormat.RGBA_8888, 2);
-
-        imageReader.setOnImageAvailableListener(reader -> {
-
-            Image image = reader.acquireLatestImage();
-
-            if (image == null) return;
-
-            try {
-                long now = System.currentTimeMillis();
-
-                if (now - lastProcessTime >= 120) {
-                    lastProcessTime = now;
-                    detectBall(image);
-                }
-
-            } catch (Exception e) {
-                e.printStackTrace();
-            } finally {
-                image.close();
+            if (!isRedMarker(buffer, x, y,
+                    rowStride, pixelStride)) {
+                continue;
             }
 
-        }, workerHandler);
+            int whiteSamples = 0;
+            int totalSamples = 0;
 
-        virtualDisplay = projection.createVirtualDisplay(
-                "SaqibPoolProCapture",
-                width,
-                height,
-                dm.densityDpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader.getSurface(),
-                null,
-                workerHandler
-        );
-    }
+            // Check the surrounding area of the red dot
+            for (int angle = 0; angle < 360; angle += 30) {
 
-    private void detectBall(Image image) {
+                double rad = Math.toRadians(angle);
 
-        Image.Plane[] planes = image.getPlanes();
-        if (planes.length == 0) return;
+                int sx = x + (int)(Math.cos(rad) * radius);
+                int sy = y + (int)(Math.sin(rad) * radius);
 
-        ByteBuffer buffer = planes[0].getBuffer();
+                totalSamples++;
 
-        int rowStride = planes[0].getRowStride();
-        int pixelStride = planes[0].getPixelStride();
-
-        int width = image.getWidth();
-        int height = image.getHeight();
-
-        int gw = width / STEP;
-        int gh = height / STEP;
-
-        boolean[] visited = new boolean[gw * gh];
-        int[] queue = new int[gw * gh];
-
-        // Search inside the pool table area.
-       int minGX = (int)(gw * 0.17f);
-int maxGX = (int)(gw * 0.84f);
-
-int minGY = (int)(gh * 0.17f);
-int maxGY = (int)(gh * 0.97f); 
-
-        int bestX = -1;
-        int bestY = -1;
-
-        double bestScore = 0;
-
-        int minDiameter = Math.max(7, (int)(gw * 0.018f));
-        int maxDiameter = Math.max(20, (int)(gw * 0.065f));
-
-        for (int gy = minGY; gy < maxGY; gy++) {
-
-            for (int gx = minGX; gx < maxGX; gx++) {
-
-                int index = gy * gw + gx;
-
-                if (visited[index]) continue;
-
-                if (!isBrightWhite(buffer,
-                        gx * STEP, gy * STEP,
+                if (isBallWhite(buffer, sx, sy,
                         rowStride, pixelStride)) {
-                    continue;
+                    whiteSamples++;
                 }
+            }
 
-                int head = 0;
-                int tail = 0;
+            // Most surrounding samples should be white
+            if (whiteSamples >= 8) {
 
-                queue[tail++] = index;
-                visited[index] = true;
+                int score = whiteSamples;
 
-                int minX = gx;
-                int maxX = gx;
-                int minY = gy;
-                int maxY = gy;
-
-                long sumX = 0;
-                long sumY = 0;
-
-                int count = 0;
-
-                while (head < tail) {
-
-                    int current = queue[head++];
-
-                    int x = current % gw;
-                    int y = current / gw;
-
-                    count++;
-
-                    sumX += x;
-                    sumY += y;
-
-                    minX = Math.min(minX, x);
-                    maxX = Math.max(maxX, x);
-                    minY = Math.min(minY, y);
-                    maxY = Math.max(maxY, y);
-
-                    for (int yy = y - 1; yy <= y + 1; yy++) {
-                        for (int xx = x - 1; xx <= x + 1; xx++) {
-
-                            if (xx < minGX || xx >= maxGX ||
-                                    yy < minGY || yy >= maxGY) {
-                                continue;
-                            }
-
-                            int ni = yy * gw + xx;
-
-                            if (!visited[ni] &&
-                                    isBrightWhite(buffer,
-                                            xx * STEP, yy * STEP,
-                                            rowStride, pixelStride)) {
-
-                                visited[ni] = true;
-
-                                if (tail < queue.length) {
-                                    queue[tail++] = ni;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                int bw = maxX - minX + 1;
-                int bh = maxY - minY + 1;
-
-                if (bw < minDiameter || bh < minDiameter ||
-                        bw > maxDiameter || bh > maxDiameter) {
-                    continue;
-                }
-
-                float ratio = (float) bw / bh;
-
-                if (ratio < 0.80f || ratio > 1.25f) {
-                    continue;
-                }
-
-                float fill = (float) count / (bw * bh);
-
-                if (fill < 0.30f) continue;
-
-                // Reject very small white patches.
-                if (count < 12) continue;
-
-                float roundness =
-                        1.0f - Math.abs(1.0f - ratio);
-
-                double score = count * fill * roundness;
-
-                // Prefer a reasonably sized round white object.
                 if (score > bestScore) {
-
                     bestScore = score;
-
-                    bestX = (int)(sumX / count) * STEP;
-                    bestY = (int)(sumY / count) * STEP;
+                    bestX = x;
+                    bestY = y;
                 }
             }
         }
-
-        if (bestX >= 0 && bestY >= 0) {
-
-            Intent update = new Intent(ACTION_BALL);
-
-            update.setPackage(getPackageName());
-
-            update.putExtra("x", (float) bestX);
-            update.putExtra("y", (float) bestY);
-
-            update.putExtra("width", width);
-            update.putExtra("height", height);
-
-            sendBroadcast(update);
-        }
     }
 
-    private boolean isBrightWhite(
-            ByteBuffer buffer,
-            int x,
-            int y,
-            int rowStride,
-            int pixelStride) {
+    if (bestX >= 0 && bestY >= 0) {
 
-        int pos = y * rowStride + x * pixelStride;
+        Intent update = new Intent(ACTION_BALL);
+        update.setPackage(getPackageName());
 
-        if (pos < 0 || pos + 2 >= buffer.limit()) {
-            return false;
-        }
+        update.putExtra("x", (float)bestX);
+        update.putExtra("y", (float)bestY);
+        update.putExtra("width", width);
+        update.putExtra("height", height);
 
-        int r = buffer.get(pos) & 255;
-        int g = buffer.get(pos + 1) & 255;
-        int b = buffer.get(pos + 2) & 255;
+        sendBroadcast(update);
+    }
+}
 
-        int max = Math.max(r, Math.max(g, b));
-        int min = Math.min(r, Math.min(g, b));
+private boolean isRedMarker(
+        ByteBuffer buffer,
+        int x,
+        int y,
+        int rowStride,
+        int pixelStride) {
 
-        return r >= 185 &&
-                g >= 185 &&
-                b >= 185 &&
-                max - min <= 45;
+    int pos = y * rowStride + x * pixelStride;
+
+    if (pos < 0 || pos + 2 >= buffer.limit()) {
+        return false;
     }
 
-    private void releaseCapture(boolean stopProjection) {
+    int r = buffer.get(pos) & 255;
+    int g = buffer.get(pos + 1) & 255;
+    int b = buffer.get(pos + 2) & 255;
 
-        if (virtualDisplay != null) {
-            virtualDisplay.release();
-            virtualDisplay = null;
-        }
+    return r > 150 &&
+            r > g * 1.4 &&
+            r > b * 1.3;
+}
 
-        if (imageReader != null) {
-            imageReader.setOnImageAvailableListener(null, null);
-            imageReader.close();
-            imageReader = null;
-        }
+private boolean isBallWhite(
+        ByteBuffer buffer,
+        int x,
+        int y,
+        int rowStride,
+        int pixelStride) {
 
-        if (projection != null) {
+    int pos = y * rowStride + x * pixelStride;
 
-            MediaProjection old = projection;
-            projection = null;
-
-            if (stopProjection) {
-                old.stop();
-            }
-        }
+    if (pos < 0 || pos + 2 >= buffer.limit()) {
+        return false;
     }
 
-    private void createNotificationChannel() {
+    int r = buffer.get(pos) & 255;
+    int g = buffer.get(pos + 1) & 255;
+    int b = buffer.get(pos + 2) & 255;
 
-        if (Build.VERSION.SDK_INT >= 26) {
+    int max = Math.max(r, Math.max(g, b));
+    int min = Math.min(r, Math.min(g, b));
 
-            NotificationChannel channel =
-                    new NotificationChannel(
-                            "pool_capture",
-                            "Pool Pro Screen Capture",
-                            NotificationManager.IMPORTANCE_LOW
-                    );
-
-            getSystemService(NotificationManager.class)
-                    .createNotificationChannel(channel);
-        }
-    }
-
-    @Override
-    public void onDestroy() {
-
-        releaseCapture(true);
-
-        if (worker != null) {
-            worker.quitSafely();
-        }
-
-        super.onDestroy();
-    }
-
-    @Override
-    public IBinder onBind(Intent intent) {
-        return null;
-    }
+    return r > 155 &&
+            g > 145 &&
+            b > 130 &&
+            max - min < 75;
 }
