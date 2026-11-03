@@ -25,6 +25,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 public class AimCaptureService extends Service {
 
@@ -32,7 +33,7 @@ public class AimCaptureService extends Service {
     public static final String EXTRA_DATA = "projectionData";
     public static final String ACTION_LINE = "com.saqib.poolpro.AIM_LINE";
 
-    private static final String TAG = "PoolProCapture";
+    private static final String TAG = "PoolProDiagnostic";
     private static final String CHANNEL_ID = "pool_capture";
     private static final int NOTIFICATION_ID = 7;
 
@@ -66,14 +67,32 @@ public class AimCaptureService extends Service {
             this.y2 = y2;
             this.votes = votes;
         }
+
+        float length() {
+            return (float) Math.hypot(x2 - x1, y2 - y1);
+        }
+
+        float angle() {
+            return (float) Math.toDegrees(
+                    Math.atan2(y2 - y1, x2 - x1));
+        }
+
+        float centerX() {
+            return (x1 + x2) / 2f;
+        }
+
+        float centerY() {
+            return (y1 + y2) / 2f;
+        }
     }
 
     @Override
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
-        startForeground(NOTIFICATION_ID,
-                buildNotification("Live detection ready"));
+        startForeground(
+                NOTIFICATION_ID,
+                buildNotification("Diagnostic mode starting"));
     }
 
     @Override
@@ -110,15 +129,17 @@ public class AimCaptureService extends Service {
             }
 
             DisplayMetrics metrics = new DisplayMetrics();
+
             android.view.WindowManager wm =
-                    (android.view.WindowManager) getSystemService(WINDOW_SERVICE);
+                    (android.view.WindowManager)
+                            getSystemService(WINDOW_SERVICE);
 
             wm.getDefaultDisplay().getRealMetrics(metrics);
 
             final int width = metrics.widthPixels;
             final int height = metrics.heightPixels;
 
-            workerThread = new HandlerThread("PoolWhiteDetector");
+            workerThread = new HandlerThread("PoolDiagnosticWorker");
             workerThread.start();
             worker = new Handler(workerThread.getLooper());
 
@@ -126,6 +147,7 @@ public class AimCaptureService extends Service {
                     width, height, PixelFormat.RGBA_8888, 3);
 
             imageReader.setOnImageAvailableListener(reader -> {
+
                 Image image = null;
 
                 try {
@@ -134,57 +156,46 @@ public class AimCaptureService extends Service {
 
                     long now = System.currentTimeMillis();
 
-                    if (now - lastFrameTime < 180) return;
+                    if (now - lastFrameTime < 250) return;
                     lastFrameTime = now;
                     frameCount++;
 
-                    // Ab moving pixels nahi, tamam visible white pixels check honge.
-                    List<Point> whitePoints = getWhitePoints(image);
+                    List<Point> points = getWhitePoints(image);
 
-                    List<Line> candidates =
-                            findCandidates(whitePoints, width, height);
+                    List<Line> lines =
+                            findCandidates(points, width, height);
 
-                    Line[] pair = findConnectedPair(candidates);
+                    // Diagnostic mode: overlay hamesha clear rahega.
+                    sendClear(width, height);
 
-                    if (pair != null) {
-                        sendLines(new float[]{
-                                pair[0].x1, pair[0].y1,
-                                pair[0].x2, pair[0].y2,
-                                pair[1].x1, pair[1].y1,
-                                pair[1].x2, pair[1].y2
-                        }, width, height);
-                    } else {
-                        sendLines(null, width, height);
-                    }
-
-                    if (now - lastNotificationTime >= 1200) {
+                    if (now - lastNotificationTime >= 1500) {
                         lastNotificationTime = now;
 
-                        String info = "Frames: " + frameCount
-                                + " | White pixels: " + whitePoints.size()
-                                + " | Candidates: " + candidates.size()
-                                + " | Pair: " + (pair == null ? "0" : "2");
+                        String report = makeReport(
+                                lines, points.size(), width, height);
 
-                        updateNotification(info);
+                        updateNotification(report);
                     }
 
                 } catch (Exception e) {
-                    Log.e(TAG, "Detection error", e);
-                    sendLines(null, width, height);
+                    Log.e(TAG, "Diagnostic error", e);
+                    sendClear(width, height);
                 } finally {
                     if (image != null) image.close();
                 }
+
             }, worker);
 
-            projection.registerCallback(new MediaProjection.Callback() {
-                @Override
-                public void onStop() {
-                    stopSelf();
-                }
-            }, worker);
+            projection.registerCallback(
+                    new MediaProjection.Callback() {
+                        @Override
+                        public void onStop() {
+                            stopSelf();
+                        }
+                    }, worker);
 
             virtualDisplay = projection.createVirtualDisplay(
-                    "SaqibPoolProCapture",
+                    "SaqibPoolDiagnostic",
                     width,
                     height,
                     metrics.densityDpi,
@@ -194,7 +205,7 @@ public class AimCaptureService extends Service {
                     worker
             );
 
-            updateNotification("Stationary white-line detection running");
+            updateNotification("Diagnostic running - aim at a ball");
 
         } catch (Exception e) {
             Log.e(TAG, "Capture start failed", e);
@@ -205,7 +216,7 @@ public class AimCaptureService extends Service {
     }
 
     /*
-     * Har frame ke visible white pixels RAM mein read karta hai.
+     * Screen ke white pixels sirf RAM mein read hote hain.
      * Koi screenshot ya image file save nahi hoti.
      */
     private List<Point> getWhitePoints(Image image) {
@@ -244,10 +255,7 @@ public class AimCaptureService extends Service {
                 int min = Math.min(r, Math.min(g, b));
                 int max = Math.max(r, Math.max(g, b));
 
-                // White pixels only.
-                boolean white = min >= 205 && max - min <= 35;
-
-                if (white) {
+                if (min >= 205 && max - min <= 35) {
                     points.add(new Point(x, y));
                 }
             }
@@ -256,6 +264,10 @@ public class AimCaptureService extends Service {
         return points;
     }
 
+    /*
+     * White pixels se candidate straight segments nikalta hai.
+     * Yeh abhi asli game guide lines ki confirmation nahi hai.
+     */
     private List<Line> findCandidates(
             List<Point> points, int width, int height) {
 
@@ -265,7 +277,7 @@ public class AimCaptureService extends Service {
 
         List<Point> remaining = new ArrayList<>(points);
 
-        for (int attempt = 0; attempt < 5; attempt++) {
+        for (int attempt = 0; attempt < 6; attempt++) {
 
             Line line = findOneLine(remaining, width, height);
 
@@ -311,6 +323,7 @@ public class AimCaptureService extends Service {
             for (int a = 0; a < 180; a++) {
 
                 double rho = p.x * cos[a] + p.y * sin[a];
+
                 int index = (int) Math.round(
                         (rho + diagonal) / rhoStep);
 
@@ -386,7 +399,6 @@ public class AimCaptureService extends Service {
 
         double length = bestEnd - bestStart;
 
-        // Chhoti aur lambi dono lines allow hain.
         if (length < 10) return null;
 
         float x1 = (float) (rho * c - bestStart * s);
@@ -395,57 +407,6 @@ public class AimCaptureService extends Service {
         float y2 = (float) (rho * s + bestEnd * c);
 
         return new Line(x1, y1, x2, y2, bestVotes);
-    }
-
-    private Line[] findConnectedPair(List<Line> lines) {
-
-        Line first = null;
-        Line second = null;
-        double bestDistance = Double.MAX_VALUE;
-
-        for (int i = 0; i < lines.size(); i++) {
-            for (int j = i + 1; j < lines.size(); j++) {
-
-                Line a = lines.get(i);
-                Line b = lines.get(j);
-
-                double angleA = Math.atan2(
-                        a.y2 - a.y1, a.x2 - a.x1);
-
-                double angleB = Math.atan2(
-                        b.y2 - b.y1, b.x2 - b.x1);
-
-                double angleDiff = Math.abs(angleA - angleB);
-                angleDiff = Math.min(angleDiff, Math.PI - angleDiff);
-
-                if (angleDiff < Math.toRadians(12)) continue;
-
-                double d = Math.min(
-                        Math.min(
-                                pointDistance(a.x1, a.y1, b.x1, b.y1),
-                                pointDistance(a.x1, a.y1, b.x2, b.y2)),
-                        Math.min(
-                                pointDistance(a.x2, a.y2, b.x1, b.y1),
-                                pointDistance(a.x2, a.y2, b.x2, b.y2))
-                );
-
-                if (d < bestDistance && d <= 28) {
-                    bestDistance = d;
-                    first = a;
-                    second = b;
-                }
-            }
-        }
-
-        if (first == null || second == null) return null;
-
-        return new Line[]{first, second};
-    }
-
-    private double pointDistance(
-            double x1, double y1, double x2, double y2) {
-
-        return Math.hypot(x1 - x2, y1 - y2);
     }
 
     private double distanceFromLine(Point p, Line line) {
@@ -462,18 +423,53 @@ public class AimCaptureService extends Service {
         ) / length;
     }
 
-    private void sendLines(float[] lines, int width, int height) {
+    private String makeReport(
+            List<Line> lines,
+            int whiteCount,
+            int screenWidth,
+            int screenHeight) {
+
+        StringBuilder report = new StringBuilder();
+
+        report.append("Frames: ").append(frameCount)
+                .append(" | White: ").append(whiteCount)
+                .append(" | Segments: ").append(lines.size());
+
+        for (int i = 0; i < lines.size(); i++) {
+
+            Line line = lines.get(i);
+
+            report.append("\nL").append(i + 1)
+                    .append(" X:")
+                    .append(Math.round(line.centerX()))
+                    .append(" Y:")
+                    .append(Math.round(line.centerY()))
+                    .append(" A:")
+                    .append(String.format(
+                            Locale.US, "%.0f", line.angle()))
+                    .append(" Len:")
+                    .append(Math.round(line.length()))
+                    .append(" V:")
+                    .append(line.votes);
+        }
+
+        report.append("\nScreen: ")
+                .append(screenWidth)
+                .append("x")
+                .append(screenHeight);
+
+        return report.toString();
+    }
+
+    private void sendClear(int width, int height) {
 
         Intent update = new Intent(ACTION_LINE);
         update.setPackage(getPackageName());
 
-        if (lines != null) {
-            update.putExtra("lines", lines);
-        }
-
         update.putExtra("width", width);
         update.putExtra("height", height);
 
+        // Null lines overlay ko clear karti hain.
         sendBroadcast(update);
     }
 
@@ -483,7 +479,7 @@ public class AimCaptureService extends Service {
 
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
-                    "Pool live capture",
+                    "Pool live diagnostic",
                     NotificationManager.IMPORTANCE_LOW);
 
             NotificationManager nm =
@@ -496,16 +492,21 @@ public class AimCaptureService extends Service {
     private Notification buildNotification(String message) {
 
         if (Build.VERSION.SDK_INT >= 26) {
+
             return new Notification.Builder(this, CHANNEL_ID)
-                    .setContentTitle("Saqib Pool Pro")
+                    .setContentTitle("Saqib Pool Pro - Diagnostic")
                     .setContentText(message)
+                    .setStyle(new Notification.BigTextStyle()
+                            .bigText(message))
                     .setSmallIcon(android.R.drawable.ic_menu_camera)
                     .build();
         }
 
         return new Notification.Builder(this)
-                .setContentTitle("Saqib Pool Pro")
+                .setContentTitle("Saqib Pool Pro - Diagnostic")
                 .setContentText(message)
+                .setStyle(new Notification.BigTextStyle()
+                        .bigText(message))
                 .setSmallIcon(android.R.drawable.ic_menu_camera)
                 .build();
     }
@@ -513,7 +514,8 @@ public class AimCaptureService extends Service {
     private void updateNotification(String message) {
 
         NotificationManager nm =
-                (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                (NotificationManager)
+                        getSystemService(NOTIFICATION_SERVICE);
 
         nm.notify(NOTIFICATION_ID, buildNotification(message));
     }
@@ -549,4 +551,4 @@ public class AimCaptureService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-            }
+                }
