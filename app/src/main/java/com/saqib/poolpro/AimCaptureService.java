@@ -24,7 +24,6 @@ import android.util.Log;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 public class AimCaptureService extends Service {
@@ -49,6 +48,7 @@ public class AimCaptureService extends Service {
 
     private static class Point {
         float x, y;
+
         Point(float x, float y) {
             this.x = x;
             this.y = y;
@@ -57,16 +57,12 @@ public class AimCaptureService extends Service {
 
     private static class Line {
         float x1, y1, x2, y2;
-        float angle, rho;
 
-        Line(float x1, float y1, float x2, float y2,
-             float angle, float rho) {
+        Line(float x1, float y1, float x2, float y2) {
             this.x1 = x1;
             this.y1 = y1;
             this.x2 = x2;
             this.y2 = y2;
-            this.angle = angle;
-            this.rho = rho;
         }
     }
 
@@ -122,7 +118,7 @@ public class AimCaptureService extends Service {
             final int width = metrics.widthPixels;
             final int height = metrics.heightPixels;
 
-            workerThread = new HandlerThread("PoolLineDetector");
+            workerThread = new HandlerThread("PoolVariableLineDetector");
             workerThread.start();
             worker = new Handler(workerThread.getLooper());
 
@@ -130,6 +126,7 @@ public class AimCaptureService extends Service {
                     width, height, PixelFormat.RGBA_8888, 3);
 
             imageReader.setOnImageAvailableListener(reader -> {
+
                 Image image = null;
 
                 try {
@@ -137,6 +134,7 @@ public class AimCaptureService extends Service {
                     if (image == null) return;
 
                     long now = System.currentTimeMillis();
+
                     if (now - lastFrameTime < 250) return;
                     lastFrameTime = now;
 
@@ -145,10 +143,10 @@ public class AimCaptureService extends Service {
                     List<Point> points = getWhitePoints(image);
 
                     Line first = detectLine(points, width, height, null);
+
                     Line second = first == null ? null :
                             detectLine(points, width, height, first);
 
-                    // Dono lines milne par hi overlay ko bhejo.
                     if (first != null && second != null) {
                         sendLines(new float[] {
                                 first.x1, first.y1,
@@ -163,12 +161,12 @@ public class AimCaptureService extends Service {
                     if (now - lastNotificationTime >= 1500) {
                         lastNotificationTime = now;
 
-                        String status = "Frames: " + frameCount
+                        updateNotification(
+                                "Frames: " + frameCount
                                 + " | White points: " + points.size()
                                 + " | Lines: "
-                                + ((first != null && second != null) ? "2" : "0");
-
-                        updateNotification(status);
+                                + ((first != null && second != null) ? "2" : "0")
+                        );
                     }
 
                 } catch (Exception e) {
@@ -177,6 +175,7 @@ public class AimCaptureService extends Service {
                 } finally {
                     if (image != null) image.close();
                 }
+
             }, worker);
 
             projection.registerCallback(
@@ -198,7 +197,7 @@ public class AimCaptureService extends Service {
                     worker
             );
 
-            updateNotification("White line detection running");
+            updateNotification("Variable white line detection running");
 
         } catch (Exception e) {
             Log.e(TAG, "Capture start failed", e);
@@ -220,20 +219,20 @@ public class AimCaptureService extends Service {
 
         int width = image.getWidth();
         int height = image.getHeight();
+
         int rowStride = plane.getRowStride();
         int pixelStride = plane.getPixelStride();
 
-        // Game table ka central area.
         int left = width / 12;
         int right = width * 11 / 12;
         int top = height / 10;
         int bottom = height * 9 / 10;
 
-        // Har doosre pixel ko sample karo.
         for (int y = top; y < bottom; y += 2) {
             for (int x = left; x < right; x += 2) {
 
                 int pos = y * rowStride + x * pixelStride;
+
                 if (pos + 2 >= buffer.limit()) continue;
 
                 int r = buffer.get(pos) & 255;
@@ -243,7 +242,6 @@ public class AimCaptureService extends Service {
                 int min = Math.min(r, Math.min(g, b));
                 int max = Math.max(r, Math.max(g, b));
 
-                // Bright neutral/white pixels.
                 if (min >= 205 && max - min <= 35) {
                     points.add(new Point(x, y));
                 }
@@ -259,7 +257,7 @@ public class AimCaptureService extends Service {
             int height,
             Line excluded) {
 
-        if (points.size() < 20) return null;
+        if (points.size() < 12) return null;
 
         double diagonal = Math.sqrt(
                 (double) width * width + (double) height * height);
@@ -286,7 +284,9 @@ public class AimCaptureService extends Service {
             }
 
             for (int a = 0; a < 180; a++) {
+
                 double rho = p.x * cos[a] + p.y * sin[a];
+
                 int index = (int) Math.round(
                         (rho + diagonal) / rhoStep);
 
@@ -302,6 +302,7 @@ public class AimCaptureService extends Service {
 
         for (int a = 0; a < 180; a++) {
             for (int r = 0; r < rhoCount; r++) {
+
                 if (accumulator[a][r] > bestVotes) {
                     bestVotes = accumulator[a][r];
                     bestAngle = a;
@@ -310,10 +311,12 @@ public class AimCaptureService extends Service {
             }
         }
 
-        if (bestAngle < 0 || bestVotes < 14) return null;
+        // Pehle 14 votes the; ab chhoti lines ke liye 6.
+        if (bestAngle < 0 || bestVotes < 6) return null;
 
         double c = cos[bestAngle];
         double s = sin[bestAngle];
+
         double rho = bestRhoIndex * rhoStep - diagonal;
 
         List<Double> projections = new ArrayList<>();
@@ -325,7 +328,8 @@ public class AimCaptureService extends Service {
                 continue;
             }
 
-            double distance = Math.abs(p.x * c + p.y * s - rho);
+            double distance =
+                    Math.abs(p.x * c + p.y * s - rho);
 
             if (distance <= 4) {
                 double projection = -p.x * s + p.y * c;
@@ -333,12 +337,13 @@ public class AimCaptureService extends Service {
             }
         }
 
-        if (projections.size() < 14) return null;
+        if (projections.size() < 6) return null;
 
         Collections.sort(projections);
 
         double bestStart = 0;
         double bestEnd = 0;
+
         double runStart = projections.get(0);
         double previous = runStart;
 
@@ -347,10 +352,12 @@ public class AimCaptureService extends Service {
             double current = projections.get(i);
 
             if (current - previous > 12) {
+
                 if (previous - runStart > bestEnd - bestStart) {
                     bestStart = runStart;
                     bestEnd = previous;
                 }
+
                 runStart = current;
             }
 
@@ -362,22 +369,23 @@ public class AimCaptureService extends Service {
             bestEnd = previous;
         }
 
-        if (bestEnd - bestStart < 50) return null;
+        // Fixed 50 pixels ki jagah 12 pixels minimum.
+        if (bestEnd - bestStart < 12) return null;
 
         float x1 = (float) (rho * c - bestStart * s);
         float y1 = (float) (rho * s + bestStart * c);
+
         float x2 = (float) (rho * c - bestEnd * s);
         float y2 = (float) (rho * s + bestEnd * c);
 
-        return new Line(
-                x1, y1, x2, y2,
-                bestAngle, (float) rho);
+        return new Line(x1, y1, x2, y2);
     }
 
     private double distanceFromLine(Point p, Line line) {
 
         double dx = line.x2 - line.x1;
         double dy = line.y2 - line.y1;
+
         double length = Math.sqrt(dx * dx + dy * dy);
 
         if (length < 1) return Double.MAX_VALUE;
@@ -406,6 +414,7 @@ public class AimCaptureService extends Service {
     private void createNotificationChannel() {
 
         if (Build.VERSION.SDK_INT >= 26) {
+
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
                     "Pool live capture",
@@ -436,8 +445,10 @@ public class AimCaptureService extends Service {
     }
 
     private void updateNotification(String message) {
+
         NotificationManager nm =
                 (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+
         nm.notify(NOTIFICATION_ID, buildNotification(message));
     }
 
