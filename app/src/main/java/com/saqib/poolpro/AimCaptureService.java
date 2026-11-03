@@ -39,13 +39,17 @@ public class AimCaptureService extends Service {
     private static final String CHANNEL_ID = "pool_capture";
     private static final String TAG = "PoolPro";
 
+    private static final int MAX_FRAMES = 10;
+    private static final long FRAME_INTERVAL = 1000;
+
     private MediaProjection projection;
     private VirtualDisplay virtualDisplay;
     private ImageReader imageReader;
     private HandlerThread thread;
     private Handler handler;
 
-    private boolean frameSaved = false;
+    private long lastSaveTime = 0;
+    private int savedFrames = 0;
 
     @Override
     public void onCreate() {
@@ -63,13 +67,13 @@ public class AimCaptureService extends Service {
 
             startForeground(7, new Notification.Builder(this, CHANNEL_ID)
                     .setContentTitle("Saqib Pool Pro")
-                    .setContentText("Saving diagnostic screen")
+                    .setContentText("Capturing pool gameplay frames")
                     .setSmallIcon(android.R.drawable.ic_menu_camera)
                     .build());
         } else {
             startForeground(7, new Notification.Builder(this)
                     .setContentTitle("Saqib Pool Pro")
-                    .setContentText("Saving diagnostic screen")
+                    .setContentText("Capturing pool gameplay frames")
                     .setSmallIcon(android.R.drawable.ic_menu_camera)
                     .build());
         }
@@ -93,7 +97,7 @@ public class AimCaptureService extends Service {
         }
 
         if (data == null) {
-            Log.e(TAG, "Projection data is missing");
+            Log.e(TAG, "Projection data missing");
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -122,7 +126,7 @@ public class AimCaptureService extends Service {
             int screenW = metrics.widthPixels;
             int screenH = metrics.heightPixels;
 
-            thread = new HandlerThread("PoolDebugCapture");
+            thread = new HandlerThread("PoolFrameCapture");
             thread.start();
             handler = new Handler(thread.getLooper());
 
@@ -130,7 +134,7 @@ public class AimCaptureService extends Service {
                     screenW,
                     screenH,
                     PixelFormat.RGBA_8888,
-                    2
+                    3
             );
 
             imageReader.setOnImageAvailableListener(reader -> {
@@ -138,21 +142,31 @@ public class AimCaptureService extends Service {
 
                 try {
                     image = reader.acquireLatestImage();
+                    if (image == null) return;
 
-                    if (image == null || frameSaved) {
-                        return;
+                    long now = System.currentTimeMillis();
+
+                    if (savedFrames >= MAX_FRAMES) return;
+                    if (now - lastSaveTime < FRAME_INTERVAL) return;
+
+                    // Save only when pool-table felt is visible.
+                    if (!isPoolTableVisible(image)) return;
+
+                    lastSaveTime = now;
+
+                    if (saveFrame(image, savedFrames + 1)) {
+                        savedFrames++;
+                        Log.d(TAG, "Saved gameplay frame " + savedFrames);
+
+                        if (savedFrames >= MAX_FRAMES) {
+                            Log.d(TAG, "All diagnostic frames saved");
+                        }
                     }
-
-                    frameSaved = true;
-                    saveDebugFrame(image);
 
                 } catch (Exception e) {
-                    frameSaved = false;
-                    Log.e(TAG, "Frame capture failed", e);
+                    Log.e(TAG, "Frame capture error", e);
                 } finally {
-                    if (image != null) {
-                        image.close();
-                    }
+                    if (image != null) image.close();
                 }
             }, handler);
 
@@ -167,7 +181,7 @@ public class AimCaptureService extends Service {
             );
 
             virtualDisplay = projection.createVirtualDisplay(
-                    "PoolDebugCapture",
+                    "PoolFrameCapture",
                     screenW,
                     screenH,
                     metrics.densityDpi,
@@ -177,7 +191,7 @@ public class AimCaptureService extends Service {
                     handler
             );
 
-            Log.d(TAG, "Screen capture started");
+            Log.d(TAG, "Capture started: " + screenW + "x" + screenH);
 
         } catch (Exception e) {
             Log.e(TAG, "Capture start failed", e);
@@ -187,21 +201,56 @@ public class AimCaptureService extends Service {
         return START_NOT_STICKY;
     }
 
-    private void saveDebugFrame(Image image) {
+    private boolean isPoolTableVisible(Image image) {
 
         Image.Plane[] planes = image.getPlanes();
+        if (planes == null || planes.length == 0) return false;
 
-        if (planes == null || planes.length == 0) {
-            Log.e(TAG, "No image planes");
-            frameSaved = false;
-            return;
-        }
+        ByteBuffer b = planes[0].getBuffer().duplicate();
 
         int width = image.getWidth();
         int height = image.getHeight();
 
+        int rowStride = planes[0].getRowStride();
+        int pixelStride = planes[0].getPixelStride();
+
+        int feltPixels = 0;
+
+        // Sample the central part of the screen.
+        for (int y = height / 4; y < height * 3 / 4; y += 12) {
+            for (int x = width / 8; x < width * 7 / 8; x += 12) {
+
+                int index = y * rowStride + x * pixelStride;
+                if (index + 2 >= b.limit()) continue;
+
+                int r = b.get(index) & 255;
+                int g = b.get(index + 1) & 255;
+                int blue = b.get(index + 2) & 255;
+
+                // Green / turquoise pool-table felt.
+                boolean felt =
+                        g > 65 &&
+                        g > r * 1.12f &&
+                        blue > 45 &&
+                        Math.abs(g - blue) < 115;
+
+                if (felt) feltPixels++;
+            }
+        }
+
+        return feltPixels >= 35;
+    }
+
+    private boolean saveFrame(Image image, int frameNumber) {
+
+        int width = image.getWidth();
+        int height = image.getHeight();
+
+        Image.Plane[] planes = image.getPlanes();
+        if (planes == null || planes.length == 0) return false;
+
         Image.Plane plane = planes[0];
-        ByteBuffer buffer = plane.getBuffer();
+        ByteBuffer buffer = plane.getBuffer().duplicate();
 
         int rowStride = plane.getRowStride();
         int pixelStride = plane.getPixelStride();
@@ -213,36 +262,37 @@ public class AimCaptureService extends Service {
 
                 int index = y * rowStride + x * pixelStride;
 
-                if (index + 3 >= buffer.limit()) {
-                    continue;
-                }
+                if (index + 3 >= buffer.limit()) continue;
 
                 int r = buffer.get(index) & 255;
                 int g = buffer.get(index + 1) & 255;
-                int b = buffer.get(index + 2) & 255;
+                int blue = buffer.get(index + 2) & 255;
                 int a = buffer.get(index + 3) & 255;
 
                 pixels[y * width + x] =
-                        (a << 24) | (r << 16) | (g << 8) | b;
+                        (a << 24) | (r << 16) | (g << 8) | blue;
             }
         }
 
         Bitmap bitmap = Bitmap.createBitmap(
+                pixels,
                 width,
                 height,
                 Bitmap.Config.ARGB_8888
         );
 
-        bitmap.setPixels(
-                pixels, 0, width,
-                0, 0, width, height
-        );
-
         try {
             ContentValues values = new ContentValues();
-            values.put(MediaStore.Images.Media.DISPLAY_NAME,
-                    "PoolPro_Debug_Frame.png");
-            values.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
+
+            values.put(
+                    MediaStore.Images.Media.DISPLAY_NAME,
+                    "PoolPro_Frame_" + frameNumber + ".png"
+            );
+
+            values.put(
+                    MediaStore.Images.Media.MIME_TYPE,
+                    "image/png"
+            );
 
             if (Build.VERSION.SDK_INT >= 29) {
                 values.put(
@@ -263,17 +313,20 @@ public class AimCaptureService extends Service {
             );
 
             if (uri == null) {
-                throw new Exception("Could not create image file");
+                Log.e(TAG, "Could not create image entry");
+                return false;
             }
 
             OutputStream output =
                     getContentResolver().openOutputStream(uri);
 
             if (output == null) {
-                throw new Exception("Could not open image output");
+                getContentResolver().delete(uri, null, null);
+                return false;
             }
 
             boolean compressed;
+
             try (OutputStream stream = output) {
                 compressed = bitmap.compress(
                         Bitmap.CompressFormat.PNG,
@@ -284,7 +337,8 @@ public class AimCaptureService extends Service {
             }
 
             if (!compressed) {
-                throw new Exception("PNG compression failed");
+                getContentResolver().delete(uri, null, null);
+                return false;
             }
 
             if (Build.VERSION.SDK_INT >= 29) {
@@ -294,11 +348,13 @@ public class AimCaptureService extends Service {
                 getContentResolver().update(uri, done, null, null);
             }
 
-            Log.d(TAG, "DEBUG FRAME SAVED: " + uri);
+            Log.d(TAG, "Image saved: " + uri);
+            return true;
 
         } catch (Exception e) {
-            frameSaved = false;
-            Log.e(TAG, "Could not save debug frame", e);
+            Log.e(TAG, "Image save failed", e);
+            return false;
+
         } finally {
             bitmap.recycle();
         }
@@ -335,4 +391,4 @@ public class AimCaptureService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-                    }
+}
