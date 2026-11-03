@@ -1,70 +1,64 @@
 
 package com.saqib.poolpro;
 
-import android.app.*;
-import android.content.*;
+import android.app.Service;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.content.Context;
+import android.content.Intent;
 import android.graphics.PixelFormat;
-import android.hardware.display.*;
-import android.media.*;
-import android.media.projection.*;
-import android.os.*;
+import android.hardware.display.DisplayManager;
+import android.hardware.display.VirtualDisplay;
+import android.media.Image;
+import android.media.ImageReader;
+import android.media.projection.MediaProjection;
+import android.media.projection.MediaProjectionManager;
+import android.os.Build;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.IBinder;
 import android.util.DisplayMetrics;
 import android.util.Log;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 
 public class AimCaptureService extends Service {
 
     public static final String EXTRA_RESULT_CODE = "resultCode";
     public static final String EXTRA_DATA = "projectionData";
-    public static final String ACTION_LINES = "com.saqib.poolpro.LINES";
 
-    private static final String CHANNEL = "pool_capture";
-    private static final String TAG = "PoolPro";
+    public static final String ACTION_LINE =
+            "com.saqib.poolpro.AIM_LINE";
+
+    private static final String CHANNEL_ID = "pool_capture";
+    private static final int NOTIFICATION_ID = 7;
 
     private MediaProjection projection;
-    private VirtualDisplay display;
-    private ImageReader reader;
-    private HandlerThread thread;
-    private Handler handler;
+    private VirtualDisplay virtualDisplay;
+    private ImageReader imageReader;
+    private HandlerThread workerThread;
+    private Handler worker;
 
-    private int screenW, screenH;
-    private long lastFrame;
+    private long lastFrameTime = 0;
 
     @Override
     public void onCreate() {
         super.onCreate();
-
-        if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel channel = new NotificationChannel(
-                    CHANNEL, "Pool Pro Capture",
-                    NotificationManager.IMPORTANCE_LOW);
-
-            getSystemService(NotificationManager.class)
-                    .createNotificationChannel(channel);
-
-            startForeground(7, new Notification.Builder(this, CHANNEL)
-                    .setContentTitle("Saqib Pool Pro")
-                    .setContentText("Live guide detection")
-                    .setSmallIcon(android.R.drawable.ic_menu_camera)
-                    .build());
-        } else {
-            startForeground(7, new Notification.Builder(this)
-                    .setContentTitle("Saqib Pool Pro")
-                    .setContentText("Live guide detection")
-                    .setSmallIcon(android.R.drawable.ic_menu_camera)
-                    .build());
-        }
+        createNotificationChannel();
+        startForeground(NOTIFICATION_ID, buildNotification());
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null || projection != null) return START_NOT_STICKY;
 
-        int result = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
+        if (intent == null || projection != null) {
+            return START_NOT_STICKY;
+        }
+
+        int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
+
         Intent data;
-
         if (Build.VERSION.SDK_INT >= 33) {
             data = intent.getParcelableExtra(EXTRA_DATA, Intent.class);
         } else {
@@ -78,263 +72,334 @@ public class AimCaptureService extends Service {
 
         try {
             MediaProjectionManager manager =
-                    (MediaProjectionManager) getSystemService(
-                            MEDIA_PROJECTION_SERVICE);
+                    (MediaProjectionManager)
+                            getSystemService(Context.MEDIA_PROJECTION_SERVICE);
 
-            projection = manager.getMediaProjection(result, data);
+            projection = manager.getMediaProjection(resultCode, data);
 
-            DisplayMetrics dm = new DisplayMetrics();
+            if (projection == null) {
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+
+            DisplayMetrics metrics = new DisplayMetrics();
             android.view.WindowManager wm =
-                    (android.view.WindowManager) getSystemService(WINDOW_SERVICE);
-            wm.getDefaultDisplay().getRealMetrics(dm);
+                    (android.view.WindowManager)
+                            getSystemService(WINDOW_SERVICE);
 
-            screenW = dm.widthPixels;
-            screenH = dm.heightPixels;
+            wm.getDefaultDisplay().getRealMetrics(metrics);
 
-            thread = new HandlerThread("PoolLiveDetector");
-            thread.start();
-            handler = new Handler(thread.getLooper());
+            int width = metrics.widthPixels;
+            int height = metrics.heightPixels;
 
-            reader = ImageReader.newInstance(
-                    screenW, screenH, PixelFormat.RGBA_8888, 3);
+            workerThread = new HandlerThread("PoolAimDetector");
+            workerThread.start();
+            worker = new Handler(workerThread.getLooper());
 
-            reader.setOnImageAvailableListener(r -> {
+            imageReader = ImageReader.newInstance(
+                    width, height, PixelFormat.RGBA_8888, 2);
+
+            imageReader.setOnImageAvailableListener(reader -> {
                 Image image = null;
+
                 try {
-                    image = r.acquireLatestImage();
+                    image = reader.acquireLatestImage();
+
                     if (image == null) return;
 
                     long now = System.currentTimeMillis();
-                    if (now - lastFrame < 250) return;
-                    lastFrame = now;
 
-                    detectLines(image);
+                    if (now - lastFrameTime < 180) return;
+
+                    lastFrameTime = now;
+
+                    detectAimLine(image);
 
                 } catch (Exception e) {
-                    Log.e(TAG, "Detection error", e);
+                    Log.e("PoolPro", "Aim detection error", e);
                 } finally {
                     if (image != null) image.close();
                 }
-            }, handler);
+            }, worker);
 
-            projection.registerCallback(new MediaProjection.Callback() {
-                @Override
-                public void onStop() {
-                    stopSelf();
-                }
-            }, handler);
+            projection.registerCallback(
+                    new MediaProjection.Callback() {
+                        @Override
+                        public void onStop() {
+                            stopSelf();
+                        }
+                    }, worker);
 
-            display = projection.createVirtualDisplay(
-                    "PoolLiveCapture",
-                    screenW, screenH, dm.densityDpi,
+            virtualDisplay = projection.createVirtualDisplay(
+                    "SaqibPoolProCapture",
+                    width,
+                    height,
+                    metrics.densityDpi,
                     DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                    reader.getSurface(), null, handler);
-
-            Log.d(TAG, "Live capture started " + screenW + "x" + screenH);
+                    imageReader.getSurface(),
+                    null,
+                    worker
+            );
 
         } catch (Exception e) {
-            Log.e(TAG, "Could not start capture", e);
+            Log.e("PoolPro", "Capture start failed", e);
             stopSelf();
         }
 
         return START_NOT_STICKY;
     }
 
-    private void detectLines(Image image) {
+    private void detectAimLine(Image image) {
+
+        int width = image.getWidth();
+        int height = image.getHeight();
 
         Image.Plane[] planes = image.getPlanes();
-        if (planes == null || planes.length == 0) return;
+        if (planes.length == 0) return;
 
         ByteBuffer buffer = planes[0].getBuffer().duplicate();
+
         int rowStride = planes[0].getRowStride();
         int pixelStride = planes[0].getPixelStride();
 
-        int gw = 320;
-        int gh = Math.max(180, (int) (320f * screenH / screenW));
+        int step = 2;
+        int gw = width / step;
+        int gh = height / step;
 
-        int angleCount = 60;
-        int diag = (int) Math.sqrt(gw * gw + gh * gh);
-        int rhoCount = diag * 2 + 1;
-        int[][] acc = new int[angleCount][rhoCount];
+        // Approximate playing-area crop.
+        // This is a starting estimate, not exact cushion detection.
+        int left = (int)(gw * 0.10f);
+        int right = (int)(gw * 0.90f);
+        int top = (int)(gh * 0.12f);
+        int bottom = (int)(gh * 0.92f);
+
+        int angleCount = 180;
+        int diagonal = (int)Math.sqrt(gw * gw + gh * gh);
+        int rhoSize = diagonal * 2 + 1;
+
+        int[][] accumulator =
+                new int[angleCount][rhoSize];
 
         double[] cos = new double[angleCount];
         double[] sin = new double[angleCount];
 
         for (int a = 0; a < angleCount; a++) {
-            double rad = Math.toRadians(a * 3);
-            cos[a] = Math.cos(rad);
-            sin[a] = Math.sin(rad);
+            double theta = Math.PI * a / angleCount;
+            cos[a] = Math.cos(theta);
+            sin[a] = Math.sin(theta);
         }
 
-        int xStart = gw / 12;
-        int xEnd = gw - xStart;
-        int yStart = gh / 8;
-        int yEnd = gh - gh / 8;
+        int whiteCount = 0;
 
-        for (int gy = yStart; gy < yEnd; gy++) {
-            int sy = gy * screenH / gh;
+        // Find bright, nearly neutral pixels.
+        for (int y = top; y < bottom; y++) {
 
-            for (int gx = xStart; gx < xEnd; gx++) {
-                int sx = gx * screenW / gw;
-                int index = sy * rowStride + sx * pixelStride;
+            for (int x = left; x < right; x++) {
 
-                if (index + 2 >= buffer.limit()) continue;
+                int px = x * step;
+                int py = y * step;
 
-                int red = buffer.get(index) & 255;
-                int green = buffer.get(index + 1) & 255;
-                int blue = buffer.get(index + 2) & 255;
+                int pos = py * rowStride + px * pixelStride;
 
-                boolean white = red > 205 && green > 205 && blue > 205
-                        && Math.abs(red - green) < 38
-                        && Math.abs(green - blue) < 38;
+                if (pos < 0 || pos + 2 >= buffer.limit()) continue;
 
-                if (!white) continue;
+                int r = buffer.get(pos) & 255;
+                int g = buffer.get(pos + 1) & 255;
+                int b = buffer.get(pos + 2) & 255;
+
+                int max = Math.max(r, Math.max(g, b));
+                int min = Math.min(r, Math.min(g, b));
+
+                // Bright neutral pixels only.
+                if (min < 175 || max - min > 55) continue;
+
+                whiteCount++;
 
                 for (int a = 0; a < angleCount; a++) {
-                    int rho = (int) Math.round(
-                            gx * cos[a] + gy * sin[a]) + diag;
 
-                    if (rho >= 0 && rho < rhoCount) {
-                        acc[a][rho]++;
+                    int rho = (int)Math.round(
+                            x * cos[a] + y * sin[a]);
+
+                    rho += diagonal;
+
+                    if (rho >= 0 && rho < rhoSize) {
+                        accumulator[a][rho]++;
                     }
                 }
             }
         }
 
-        ArrayList<Line> found = new ArrayList<>();
+        int bestAngle = -1;
+        int bestRho = -1;
+        int bestVotes = 0;
 
-        for (int n = 0; n < 2; n++) {
-            int bestA = -1;
-            int bestR = -1;
-            int bestVotes = 0;
+        // Find strongest straight-line candidate.
+        for (int a = 0; a < angleCount; a++) {
 
-            for (int a = 0; a < angleCount; a++) {
-                for (int r = 0; r < rhoCount; r++) {
-                    if (acc[a][r] > bestVotes) {
-                        bestVotes = acc[a][r];
-                        bestA = a;
-                        bestR = r;
-                    }
-                }
-            }
+            for (int r = 0; r < rhoSize; r++) {
 
-            if (bestA < 0 || bestVotes < 18) break;
+                int votes = accumulator[a][r];
 
-            double theta = Math.toRadians(bestA * 3);
-            double rho = bestR - diag;
-
-            float[] p = clipLine(
-                    (float) Math.cos(theta),
-                    (float) Math.sin(theta),
-                    (float) rho,
-                    xStart, yStart, xEnd, yEnd
-            );
-
-            if (p != null) {
-                found.add(new Line(
-                        p[0] * screenW / gw,
-                        p[1] * screenH / gh,
-                        p[2] * screenW / gw,
-                        p[3] * screenH / gh
-                ));
-            }
-
-            for (int a = 0; a < angleCount; a++) {
-                int diff = Math.abs(a - bestA);
-                diff = Math.min(diff, angleCount - diff);
-
-                if (diff <= 3) {
-                    for (int rr = 0; rr < rhoCount; rr++) {
-                        if (Math.abs(rr - bestR) < 22) {
-                            acc[a][rr] = 0;
-                        }
-                    }
+                if (votes > bestVotes) {
+                    bestVotes = votes;
+                    bestAngle = a;
+                    bestRho = r;
                 }
             }
         }
 
-        Intent out = new Intent(ACTION_LINES);
-        out.setPackage(getPackageName());
-
-        float[] values = new float[found.size() * 4];
-
-        for (int i = 0; i < found.size(); i++) {
-            Line line = found.get(i);
-            values[i * 4] = line.x1;
-            values[i * 4 + 1] = line.y1;
-            values[i * 4 + 2] = line.x2;
-            values[i * 4 + 3] = line.y2;
+        // Avoid displaying random short highlights.
+        if (bestAngle < 0 || bestVotes < 18 || whiteCount < 25) {
+            sendLine(null, width, height);
+            return;
         }
 
-        out.putExtra("lines", values);
-        sendBroadcast(out);
+        double nx = cos[bestAngle];
+        double ny = sin[bestAngle];
+
+        double rho = bestRho - diagonal;
+
+        // Line equation: x*cos + y*sin = rho
+        // Find intersections with estimated playing-area bounds.
+        double x1 = Double.NaN;
+        double y1 = Double.NaN;
+        double x2 = Double.NaN;
+        double y2 = Double.NaN;
+
+        double[] p = new double[2];
+
+        if (Math.abs(ny) > 0.0001) {
+
+            double y = (rho - left * nx) / ny;
+            if (y >= top && y <= bottom) {
+                x1 = left;
+                y1 = y;
+            }
+
+            y = (rho - right * nx) / ny;
+            if (y >= top && y <= bottom) {
+                if (Double.isNaN(x1)) {
+                    x1 = right;
+                    y1 = y;
+                } else {
+                    x2 = right;
+                    y2 = y;
+                }
+            }
+        }
+
+        if (Math.abs(nx) > 0.0001) {
+
+            double x = (rho - top * ny) / nx;
+            if (x >= left && x <= right) {
+                if (Double.isNaN(x1)) {
+                    x1 = x;
+                    y1 = top;
+                } else if (Double.isNaN(x2)) {
+                    x2 = x;
+                    y2 = top;
+                }
+            }
+
+            x = (rho - bottom * ny) / nx;
+            if (x >= left && x <= right) {
+                if (Double.isNaN(x1)) {
+                    x1 = x;
+                    y1 = bottom;
+                } else if (Double.isNaN(x2)) {
+                    x2 = x;
+                    y2 = bottom;
+                }
+            }
+        }
+
+        if (Double.isNaN(x1) || Double.isNaN(x2)) {
+            sendLine(null, width, height);
+            return;
+        }
+
+        float[] line = new float[] {
+                (float)(x1 * step),
+                (float)(y1 * step),
+                (float)(x2 * step),
+                (float)(y2 * step)
+        };
+
+        sendLine(line, width, height);
     }
 
-    private float[] clipLine(float a, float b, float rho,
-                             float left, float top,
-                             float right, float bottom) {
+    private void sendLine(float[] line, int width, int height) {
 
-        ArrayList<float[]> pts = new ArrayList<>();
+        Intent update = new Intent(ACTION_LINE);
+        update.setPackage(getPackageName());
 
-        if (Math.abs(b) > 0.0001f) {
-            addPoint(pts, left, (rho - a * left) / b,
-                    left, top, right, bottom);
-            addPoint(pts, right, (rho - a * right) / b,
-                    left, top, right, bottom);
+        if (line != null) {
+            update.putExtra("line", line);
         }
 
-        if (Math.abs(a) > 0.0001f) {
-            addPoint(pts, (rho - b * top) / a, top,
-                    left, top, right, bottom);
-            addPoint(pts, (rho - b * bottom) / a, bottom,
-                    left, top, right, bottom);
-        }
+        update.putExtra("width", width);
+        update.putExtra("height", height);
 
-        if (pts.size() < 2) return null;
-
-        float[] p1 = pts.get(0);
-        float[] p2 = pts.get(1);
-
-        return new float[]{p1[0], p1[1], p2[0], p2[1]};
+        sendBroadcast(update);
     }
 
-    private void addPoint(ArrayList<float[]> pts,
-                          float x, float y,
-                          float left, float top,
-                          float right, float bottom) {
+    private void createNotificationChannel() {
 
-        if (x < left || x > right || y < top || y > bottom) return;
+        if (Build.VERSION.SDK_INT >= 26) {
 
-        for (float[] p : pts) {
-            if (Math.abs(p[0] - x) < 2 &&
-                    Math.abs(p[1] - y) < 2) return;
+            NotificationChannel channel =
+                    new NotificationChannel(
+                            CHANNEL_ID,
+                            "Pool aim detection",
+                            NotificationManager.IMPORTANCE_LOW
+                    );
+
+            NotificationManager nm =
+                    getSystemService(NotificationManager.class);
+
+            nm.createNotificationChannel(channel);
         }
-
-        pts.add(new float[]{x, y});
     }
 
-    private static class Line {
-        float x1, y1, x2, y2;
+    private Notification buildNotification() {
 
-        Line(float a, float b, float c, float d) {
-            x1 = a;
-            y1 = b;
-            x2 = c;
-            y2 = d;
+        if (Build.VERSION.SDK_INT >= 26) {
+            return new Notification.Builder(this, CHANNEL_ID)
+                    .setContentTitle("Saqib Pool Pro")
+                    .setContentText("Aim detection is running")
+                    .setSmallIcon(android.R.drawable.ic_menu_search)
+                    .build();
         }
+
+        return new Notification.Builder(this)
+                .setContentTitle("Saqib Pool Pro")
+                .setContentText("Aim detection is running")
+                .setSmallIcon(android.R.drawable.ic_menu_search)
+                .build();
     }
 
     @Override
     public void onDestroy() {
-        if (display != null) display.release();
-        if (reader != null) reader.close();
-        if (projection != null) projection.stop();
-        if (thread != null) thread.quitSafely();
 
-        display = null;
-        reader = null;
-        projection = null;
-        thread = null;
+        if (virtualDisplay != null) {
+            virtualDisplay.release();
+            virtualDisplay = null;
+        }
+
+        if (imageReader != null) {
+            imageReader.close();
+            imageReader = null;
+        }
+
+        if (projection != null) {
+            projection.stop();
+            projection = null;
+        }
+
+        if (workerThread != null) {
+            workerThread.quitSafely();
+            workerThread = null;
+        }
 
         stopForeground(true);
         super.onDestroy();
