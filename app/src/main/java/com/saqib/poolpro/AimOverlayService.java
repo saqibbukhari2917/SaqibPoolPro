@@ -50,7 +50,6 @@ public class AimOverlayService extends Service {
                 );
 
         params.gravity = Gravity.TOP | Gravity.START;
-
         windowManager.addView(aimView, params);
 
         receiver = new BroadcastReceiver() {
@@ -70,12 +69,19 @@ public class AimOverlayService extends Service {
                 int width = intent.getIntExtra("width", 0);
                 int height = intent.getIntExtra("height", 0);
 
+                int left = intent.getIntExtra("left", 0);
+                int top = intent.getIntExtra("top", 0);
+                int right = intent.getIntExtra("right", 0);
+                int bottom = intent.getIntExtra("bottom", 0);
+
                 if (aimView != null &&
                         x >= 0 && y >= 0 &&
-                        width > 0 && height > 0) {
+                        width > 0 && height > 0 &&
+                        right > left && bottom > top) {
 
                     aimView.setGuide(
-                            x, y, angle, width, height, score
+                            x, y, angle, width, height,
+                            left, top, right, bottom, score
                     );
                 }
             }
@@ -97,33 +103,41 @@ public class AimOverlayService extends Service {
 
     private class AimView extends View {
 
-        private final Paint outline = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint guide = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         private float x = -1;
         private float y = -1;
         private float angle;
-        private float score;
 
         private int sourceWidth = 1;
         private int sourceHeight = 1;
+
+        private int tableLeft;
+        private int tableTop;
+        private int tableRight;
+        private int tableBottom;
+
+        private float score;
 
         AimView(Context context) {
             super(context);
 
             setLayerType(View.LAYER_TYPE_SOFTWARE, null);
 
-            outline.setColor(Color.BLACK);
-            outline.setStrokeWidth(
+            border.setColor(Color.BLACK);
+            border.setStyle(Paint.Style.STROKE);
+            border.setStrokeWidth(
                     5 * getResources().getDisplayMetrics().density
             );
-            outline.setStrokeCap(Paint.Cap.ROUND);
+            border.setStrokeCap(Paint.Cap.ROUND);
 
-            line.setColor(Color.WHITE);
-            line.setStrokeWidth(
-                    2.2f * getResources().getDisplayMetrics().density
+            guide.setColor(Color.WHITE);
+            guide.setStyle(Paint.Style.STROKE);
+            guide.setStrokeWidth(
+                    2 * getResources().getDisplayMetrics().density
             );
-            line.setStrokeCap(Paint.Cap.ROUND);
+            guide.setStrokeCap(Paint.Cap.ROUND);
         }
 
         void setGuide(
@@ -132,13 +146,24 @@ public class AimOverlayService extends Service {
                 float a,
                 int w,
                 int h,
+                int left,
+                int top,
+                int right,
+                int bottom,
                 float s) {
 
             x = px;
             y = py;
             angle = a;
+
             sourceWidth = w;
             sourceHeight = h;
+
+            tableLeft = left;
+            tableTop = top;
+            tableRight = right;
+            tableBottom = bottom;
+
             score = s;
 
             postInvalidate();
@@ -148,7 +173,7 @@ public class AimOverlayService extends Service {
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
 
-            if (x < 0 || y < 0 || score < 16) return;
+            if (x < 0 || y < 0 || score < 22) return;
 
             float sx = getWidth() / (float) sourceWidth;
             float sy = getHeight() / (float) sourceHeight;
@@ -159,18 +184,23 @@ public class AimOverlayService extends Service {
             float dx = (float) Math.cos(angle);
             float dy = (float) Math.sin(angle);
 
+            float left = tableLeft * sx;
+            float right = tableRight * sx;
+            float top = tableTop * sy;
+            float bottom = tableBottom * sy;
+
             float t = Float.POSITIVE_INFINITY;
 
             if (dx > 0) {
-                t = Math.min(t, (getWidth() - startX) / dx);
+                t = Math.min(t, (right - startX) / dx);
             } else if (dx < 0) {
-                t = Math.min(t, -startX / dx);
+                t = Math.min(t, (left - startX) / dx);
             }
 
             if (dy > 0) {
-                t = Math.min(t, (getHeight() - startY) / dy);
+                t = Math.min(t, (bottom - startY) / dy);
             } else if (dy < 0) {
-                t = Math.min(t, -startY / dy);
+                t = Math.min(t, (top - startY) / dy);
             }
 
             if (t <= 0 || Float.isInfinite(t)) return;
@@ -178,13 +208,13 @@ public class AimOverlayService extends Service {
             float endX = startX + dx * t;
             float endY = startY + dy * t;
 
-            // Original-style white line with a dark outline.
+            // No ball marker or red circle.
             canvas.drawLine(
-                    startX, startY, endX, endY, outline
+                    startX, startY, endX, endY, border
             );
 
             canvas.drawLine(
-                    startX, startY, endX, endY, line
+                    startX, startY, endX, endY, guide
             );
         }
     }
@@ -220,4 +250,4 @@ public class AimOverlayService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-}
+                }
