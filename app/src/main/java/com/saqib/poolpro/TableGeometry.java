@@ -4,7 +4,6 @@ public final class TableGeometry {
 
     private TableGeometry() {}
 
-    // Ray ko nearest cushion tak extend karta hai.
     public static float[] extendRay(
             float x, float y,
             float dx, float dy,
@@ -14,7 +13,7 @@ public final class TableGeometry {
         if (right <= left || bottom <= top) return null;
         if (x < left || x > right || y < top || y > bottom) return null;
         if (Math.abs(dx) < 0.000001f &&
-            Math.abs(dy) < 0.000001f) return null;
+                Math.abs(dy) < 0.000001f) return null;
 
         float tMin = Float.POSITIVE_INFINITY;
 
@@ -45,31 +44,40 @@ public final class TableGeometry {
         if (!Float.isFinite(tMin)) return null;
 
         return new float[] {
-            x, y,
-            x + tMin * dx,
-            y + tMin * dy
+                x, y,
+                x + tMin * dx,
+                y + tMin * dy
         };
     }
 
-    // Contact point se dono guide lines cushion tak.
-    public static float[] extendTwoLines(
-            float x, float y,
-            float dx1, float dy1,
-            float dx2, float dy2,
+    // Dono lines ke alag origins aur directions.
+    public static float[] extendTwoLinesFromOrigins(
+            float cueX, float cueY,
+            float cueDx, float cueDy,
+            float objectX, float objectY,
+            float objectDx, float objectDy,
             float left, float top,
             float right, float bottom) {
 
-        float[] a = extendRay(
-            x, y, dx1, dy1, left, top, right, bottom);
+        float[] cueLine = extendRay(
+                cueX, cueY, cueDx, cueDy,
+                left, top, right, bottom);
 
-        float[] b = extendRay(
-            x, y, dx2, dy2, left, top, right, bottom);
+        float[] objectLine = extendRay(
+                objectX, objectY, objectDx, objectDy,
+                left, top, right, bottom);
 
-        if (a == null || b == null) return null;
+        // Ek bhi line valid na ho to dono draw nahi hongi.
+        if (cueLine == null || objectLine == null) {
+            return null;
+        }
 
         return new float[] {
-            a[0], a[1], a[2], a[3],
-            b[0], b[1], b[2], b[3]
+                cueLine[0], cueLine[1],
+                cueLine[2], cueLine[3],
+
+                objectLine[0], objectLine[1],
+                objectLine[2], objectLine[3]
         };
     }
 }
