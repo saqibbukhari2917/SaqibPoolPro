@@ -1,16 +1,25 @@
+
 package com.saqib.poolpro;
 
 import android.app.Service;
-import android.content.*;
-import android.graphics.*;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.IBinder;
-import android.view.*;
 import android.provider.Settings;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
 
 public class AimOverlayService extends Service {
 
-    private WindowManager wm;
+    private WindowManager windowManager;
     private AimView aimView;
     private BroadcastReceiver receiver;
 
@@ -23,63 +32,100 @@ public class AimOverlayService extends Service {
             return;
         }
 
-        wm = (WindowManager) getSystemService(WINDOW_SERVICE);
-        aimView = new AimView(this);
+        windowManager =
+                (WindowManager)getSystemService(WINDOW_SERVICE);
 
-        int type = Build.VERSION.SDK_INT >= 26
-                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                : WindowManager.LayoutParams.TYPE_PHONE;
+        aimView = new AimView(this);
 
         WindowManager.LayoutParams params =
                 new WindowManager.LayoutParams(
                         WindowManager.LayoutParams.MATCH_PARENT,
                         WindowManager.LayoutParams.MATCH_PARENT,
-                        type,
+                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                                 | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                                | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                        PixelFormat.TRANSLUCENT);
+                                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                        PixelFormat.TRANSLUCENT
+                );
 
         params.gravity = Gravity.TOP | Gravity.START;
-        wm.addView(aimView, params);
+
+        windowManager.addView(aimView, params);
+
+        registerLineReceiver();
+    }
+
+    private void registerLineReceiver() {
 
         receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                float[] lines = intent.getFloatArrayExtra("lines");
-                if (aimView != null) aimView.setLines(lines);
+
+                if (!AimCaptureService.ACTION_LINE.equals(
+                        intent.getAction())) {
+                    return;
+                }
+
+                float[] line = intent.getFloatArrayExtra("line");
+
+                int width = intent.getIntExtra("width", 0);
+                int height = intent.getIntExtra("height", 0);
+
+                if (aimView != null) {
+                    aimView.setLine(line, width, height);
+                }
             }
         };
 
-        IntentFilter filter = new IntentFilter(
-                AimCaptureService.ACTION_LINES);
+        IntentFilter filter =
+                new IntentFilter(AimCaptureService.ACTION_LINE);
 
         if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            registerReceiver(
+                    receiver,
+                    filter,
+                    Context.RECEIVER_NOT_EXPORTED
+            );
         } else {
             registerReceiver(receiver, filter);
         }
     }
 
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        return START_STICKY;
-    }
+    private class AimView extends View {
 
-    private static class AimView extends View {
+        private final Paint linePaint = new Paint(
+                Paint.ANTI_ALIAS_FLAG
+        );
 
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private float[] lines = new float[0];
+        private float[] line;
+        private int sourceWidth = 1;
+        private int sourceHeight = 1;
 
         AimView(Context context) {
             super(context);
+
             setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+
+            linePaint.setColor(Color.CYAN);
+            linePaint.setStrokeWidth(
+                    2.5f * getResources()
+                            .getDisplayMetrics().density
+            );
+            linePaint.setStrokeCap(Paint.Cap.ROUND);
+            linePaint.setStyle(Paint.Style.STROKE);
         }
 
-        void setLines(float[] values) {
-            lines = values == null ? new float[0] : values.clone();
+        void setLine(float[] points, int width, int height) {
+
+            if (points == null || points.length < 4) {
+                line = null;
+            } else {
+                line = points.clone();
+            }
+
+            if (width > 0) sourceWidth = width;
+            if (height > 0) sourceHeight = height;
+
             postInvalidate();
         }
 
@@ -87,47 +133,51 @@ public class AimOverlayService extends Service {
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
 
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(4f);
-            paint.setStrokeCap(Paint.Cap.ROUND);
+            if (line == null || line.length < 4) return;
 
-            for (int i = 0; i + 3 < lines.length; i += 4) {
-                if (i == 0) {
-                    paint.setColor(Color.CYAN);
-                } else {
-                    paint.setColor(Color.YELLOW);
-                }
+            float sx = getWidth() / (float)sourceWidth;
+            float sy = getHeight() / (float)sourceHeight;
 
-                paint.setAlpha(220);
-                canvas.drawLine(
-                        lines[i], lines[i + 1],
-                        lines[i + 2], lines[i + 3],
-                        paint);
-            }
+            canvas.drawLine(
+                    line[0] * sx,
+                    line[1] * sy,
+                    line[2] * sx,
+                    line[3] * sy,
+                    linePaint
+            );
         }
     }
 
     @Override
     public void onDestroy() {
+
         if (receiver != null) {
             try {
                 unregisterReceiver(receiver);
-            } catch (Exception ignored) { }
+            } catch (Exception ignored) {
+            }
             receiver = null;
         }
 
-        if (wm != null && aimView != null) {
+        if (windowManager != null && aimView != null) {
             try {
-                wm.removeView(aimView);
-            } catch (Exception ignored) { }
+                windowManager.removeView(aimView);
+            } catch (Exception ignored) {
+            }
+            aimView = null;
         }
 
-        aimView = null;
         super.onDestroy();
+    }
+
+    @Override
+    public int onStartCommand(
+            Intent intent, int flags, int startId) {
+        return START_NOT_STICKY;
     }
 
     @Override
     public IBinder onBind(Intent intent) {
         return null;
     }
-}
+                }
