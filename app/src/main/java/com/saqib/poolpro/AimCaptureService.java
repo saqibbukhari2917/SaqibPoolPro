@@ -20,6 +20,8 @@ import android.os.IBinder;
 import android.util.DisplayMetrics;
 import android.util.Log;
 
+import java.nio.ByteBuffer;
+
 public class AimCaptureService extends Service {
 
     public static final String EXTRA_RESULT_CODE = "resultCode";
@@ -35,7 +37,11 @@ public class AimCaptureService extends Service {
     private ImageReader imageReader;
     private HandlerThread workerThread;
     private Handler worker;
+
     private long lastFrameTime;
+    private long lastNotificationTime;
+    private int frameCount;
+    private int whitePixelCount;
 
     @Override
     public void onCreate() {
@@ -47,6 +53,7 @@ public class AimCaptureService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+
         if (intent == null || projection != null) {
             return START_NOT_STICKY;
         }
@@ -96,6 +103,7 @@ public class AimCaptureService extends Service {
                     width, height, PixelFormat.RGBA_8888, 3);
 
             imageReader.setOnImageAvailableListener(reader -> {
+
                 Image image = null;
 
                 try {
@@ -104,11 +112,27 @@ public class AimCaptureService extends Service {
 
                     long now = System.currentTimeMillis();
 
-                    if (now - lastFrameTime < 180) return;
+                    if (now - lastFrameTime < 300) return;
                     lastFrameTime = now;
 
-                    // Frame sirf RAM mein process hota hai.
+                    frameCount++;
+
+                    // Sirf RAM mein pixels ka diagnostic count.
                     // Koi screenshot ya image file save nahi hoti.
+                    whitePixelCount = countBrightNeutralPixels(image);
+
+                    if (now - lastNotificationTime >= 1500) {
+                        lastNotificationTime = now;
+
+                        updateNotification(
+                                "Live frames: " + frameCount
+                                        + " | White pixels: "
+                                        + whitePixelCount
+                        );
+                    }
+
+                    // Original guide lines verify nahi hui hain.
+                    // Is liye abhi koi line draw nahi karni.
                     sendLines(null, width, height);
 
                 } catch (Exception e) {
@@ -118,6 +142,7 @@ public class AimCaptureService extends Service {
                         image.close();
                     }
                 }
+
             }, worker);
 
             projection.registerCallback(
@@ -136,10 +161,10 @@ public class AimCaptureService extends Service {
                     DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                     imageReader.getSurface(),
                     null,
-                    worker);
+                    worker
+            );
 
-            updateNotification(
-                    "Live capture active — no images are saved");
+            updateNotification("Live capture started");
 
         } catch (Exception e) {
             Log.e(TAG, "Capture start failed", e);
@@ -149,7 +174,53 @@ public class AimCaptureService extends Service {
         return START_NOT_STICKY;
     }
 
+    private int countBrightNeutralPixels(Image image) {
+
+        Image.Plane[] planes = image.getPlanes();
+        if (planes == null || planes.length == 0) return 0;
+
+        Image.Plane plane = planes[0];
+        ByteBuffer buffer = plane.getBuffer().duplicate();
+
+        int width = image.getWidth();
+        int height = image.getHeight();
+
+        int rowStride = plane.getRowStride();
+        int pixelStride = plane.getPixelStride();
+
+        int left = width / 10;
+        int right = width * 9 / 10;
+        int top = height * 12 / 100;
+        int bottom = height * 92 / 100;
+
+        int count = 0;
+
+        // Har 4 pixels par sample; processing halka rakha gaya hai.
+        for (int y = top; y < bottom; y += 4) {
+            for (int x = left; x < right; x += 4) {
+
+                int pos = y * rowStride + x * pixelStride;
+
+                if (pos + 2 >= buffer.limit()) continue;
+
+                int r = buffer.get(pos) & 255;
+                int g = buffer.get(pos + 1) & 255;
+                int b = buffer.get(pos + 2) & 255;
+
+                int min = Math.min(r, Math.min(g, b));
+                int max = Math.max(r, Math.max(g, b));
+
+                if (min >= 190 && max - min <= 42) {
+                    count++;
+                }
+            }
+        }
+
+        return count;
+    }
+
     private void sendLines(float[] lines, int width, int height) {
+
         Intent update = new Intent(ACTION_LINE);
         update.setPackage(getPackageName());
 
@@ -164,6 +235,7 @@ public class AimCaptureService extends Service {
     }
 
     private void createNotificationChannel() {
+
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
@@ -178,6 +250,7 @@ public class AimCaptureService extends Service {
     }
 
     private Notification buildNotification(String message) {
+
         if (Build.VERSION.SDK_INT >= 26) {
             return new Notification.Builder(this, CHANNEL_ID)
                     .setContentTitle("Saqib Pool Pro")
@@ -194,6 +267,7 @@ public class AimCaptureService extends Service {
     }
 
     private void updateNotification(String message) {
+
         NotificationManager nm =
                 (NotificationManager)
                         getSystemService(NOTIFICATION_SERVICE);
@@ -203,6 +277,7 @@ public class AimCaptureService extends Service {
 
     @Override
     public void onDestroy() {
+
         if (virtualDisplay != null) {
             virtualDisplay.release();
             virtualDisplay = null;
@@ -231,4 +306,4 @@ public class AimCaptureService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-    }
+                        }
