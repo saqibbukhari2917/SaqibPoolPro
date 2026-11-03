@@ -1,3 +1,4 @@
+
 package com.saqib.poolpro;
 
 import android.app.*;
@@ -39,6 +40,7 @@ public class AimCaptureService extends Service {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL, "Pool Pro Capture",
                     NotificationManager.IMPORTANCE_LOW);
+
             getSystemService(NotificationManager.class)
                     .createNotificationChannel(channel);
 
@@ -138,11 +140,6 @@ public class AimCaptureService extends Service {
         return START_NOT_STICKY;
     }
 
-    /*
-     * Hough-style white-line detector.
-     * It searches for long, bright, nearly-neutral lines in the
-     * central gameplay area. It does not save screenshots.
-     */
     private void detectLines(Image image) {
 
         Image.Plane[] planes = image.getPlanes();
@@ -155,7 +152,7 @@ public class AimCaptureService extends Service {
         int gw = 320;
         int gh = Math.max(180, (int) (320f * screenH / screenW));
 
-        int angleCount = 60; // 3-degree increments
+        int angleCount = 60;
         int diag = (int) Math.sqrt(gw * gw + gh * gh);
         int rhoCount = diag * 2 + 1;
         int[][] acc = new int[angleCount][rhoCount];
@@ -174,22 +171,22 @@ public class AimCaptureService extends Service {
         int yStart = gh / 8;
         int yEnd = gh - gh / 8;
 
-        for (int gy = yStart; gy < yEnd; gy += 1) {
+        for (int gy = yStart; gy < yEnd; gy++) {
             int sy = gy * screenH / gh;
 
-            for (int gx = xStart; gx < xEnd; gx += 1) {
+            for (int gx = xStart; gx < xEnd; gx++) {
                 int sx = gx * screenW / gw;
                 int index = sy * rowStride + sx * pixelStride;
 
                 if (index + 2 >= buffer.limit()) continue;
 
-                int r = buffer.get(index) & 255;
-                int g = buffer.get(index + 1) & 255;
-                int b = buffer.get(index + 2) & 255;
+                int red = buffer.get(index) & 255;
+                int green = buffer.get(index + 1) & 255;
+                int blue = buffer.get(index + 2) & 255;
 
-                boolean white = r > 205 && g > 205 && b > 205
-                        && Math.abs(r - g) < 38
-                        && Math.abs(g - b) < 38;
+                boolean white = red > 205 && green > 205 && blue > 205
+                        && Math.abs(red - green) < 38
+                        && Math.abs(green - blue) < 38;
 
                 if (!white) continue;
 
@@ -207,7 +204,9 @@ public class AimCaptureService extends Service {
         ArrayList<Line> found = new ArrayList<>();
 
         for (int n = 0; n < 2; n++) {
-            int bestA = -1, bestR = -1, bestVotes = 0;
+            int bestA = -1;
+            int bestR = -1;
+            int bestVotes = 0;
 
             for (int a = 0; a < angleCount; a++) {
                 for (int r = 0; r < rhoCount; r++) {
@@ -219,7 +218,6 @@ public class AimCaptureService extends Service {
                 }
             }
 
-            // Ignore short or weak white features.
             if (bestA < 0 || bestVotes < 18) break;
 
             double theta = Math.toRadians(bestA * 3);
@@ -229,22 +227,23 @@ public class AimCaptureService extends Service {
                     (float) Math.cos(theta),
                     (float) Math.sin(theta),
                     (float) rho,
-                    screenW * 0.08f,
-                    screenH * 0.12f,
-                    screenW * 0.92f,
-                    screenH * 0.88f
+                    xStart, yStart, xEnd, yEnd
             );
 
             if (p != null) {
-                found.add(new Line(p[0], p[1], p[2], p[3]));
+                found.add(new Line(
+                        p[0] * screenW / gw,
+                        p[1] * screenH / gh,
+                        p[2] * screenW / gw,
+                        p[3] * screenH / gh
+                ));
             }
 
-            // Suppress nearby peaks so the same line is not selected twice.
             for (int a = 0; a < angleCount; a++) {
-                int angleDiff = Math.abs(a - bestA);
-                angleDiff = Math.min(angleDiff, angleCount - angleDiff);
+                int diff = Math.abs(a - bestA);
+                diff = Math.min(diff, angleCount - diff);
 
-                if (angleDiff <= 3) {
+                if (diff <= 3) {
                     for (int rr = 0; rr < rhoCount; rr++) {
                         if (Math.abs(rr - bestR) < 22) {
                             acc[a][rr] = 0;
@@ -257,26 +256,20 @@ public class AimCaptureService extends Service {
         Intent out = new Intent(ACTION_LINES);
         out.setPackage(getPackageName());
 
-        if (found.size() > 0) {
-            float[] values = new float[found.size() * 4];
+        float[] values = new float[found.size() * 4];
 
-            for (int i = 0; i < found.size(); i++) {
-                Line line = found.get(i);
-                values[i * 4] = line.x1;
-                values[i * 4 + 1] = line.y1;
-                values[i * 4 + 2] = line.x2;
-                values[i * 4 + 3] = line.y2;
-            }
-
-            out.putExtra("lines", values);
-        } else {
-            out.putExtra("lines", new float[0]);
+        for (int i = 0; i < found.size(); i++) {
+            Line line = found.get(i);
+            values[i * 4] = line.x1;
+            values[i * 4 + 1] = line.y1;
+            values[i * 4 + 2] = line.x2;
+            values[i * 4 + 3] = line.y2;
         }
 
+        out.putExtra("lines", values);
         sendBroadcast(out);
     }
 
-    // Clip an infinite Hough line to the gameplay rectangle.
     private float[] clipLine(float a, float b, float rho,
                              float left, float top,
                              float right, float bottom) {
@@ -309,18 +302,25 @@ public class AimCaptureService extends Service {
                           float x, float y,
                           float left, float top,
                           float right, float bottom) {
+
         if (x < left || x > right || y < top || y > bottom) return;
 
         for (float[] p : pts) {
-            if (Math.abs(p[0] - x) < 2 && Math.abs(p[1] - y) < 2) return;
+            if (Math.abs(p[0] - x) < 2 &&
+                    Math.abs(p[1] - y) < 2) return;
         }
+
         pts.add(new float[]{x, y});
     }
 
     private static class Line {
         float x1, y1, x2, y2;
+
         Line(float a, float b, float c, float d) {
-            x1 = a; y1 = b; x2 = c; y2 = d;
+            x1 = a;
+            y1 = b;
+            x2 = c;
+            y2 = d;
         }
     }
 
@@ -344,4 +344,4 @@ public class AimCaptureService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-}
+            }
