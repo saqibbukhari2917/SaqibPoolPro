@@ -1,55 +1,35 @@
-
 package com.saqib.poolpro;
 
-import android.app.Service;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.content.ContentValues;
-import android.content.Context;
-import android.content.Intent;
-import android.graphics.Bitmap;
+import android.app.*;
+import android.content.*;
 import android.graphics.PixelFormat;
-import android.hardware.display.DisplayManager;
-import android.hardware.display.VirtualDisplay;
-import android.media.Image;
-import android.media.ImageReader;
-import android.media.projection.MediaProjection;
-import android.media.projection.MediaProjectionManager;
-import android.net.Uri;
-import android.os.Build;
-import android.os.Environment;
-import android.os.Handler;
-import android.os.HandlerThread;
-import android.os.IBinder;
-import android.provider.MediaStore;
+import android.hardware.display.*;
+import android.media.*;
+import android.media.projection.*;
+import android.os.*;
 import android.util.DisplayMetrics;
 import android.util.Log;
 
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 
 public class AimCaptureService extends Service {
 
     public static final String EXTRA_RESULT_CODE = "resultCode";
     public static final String EXTRA_DATA = "projectionData";
-    public static final String ACTION_AIM =
-            "com.saqib.poolpro.AIM_DIRECTION";
+    public static final String ACTION_LINES = "com.saqib.poolpro.LINES";
 
-    private static final String CHANNEL_ID = "pool_capture";
+    private static final String CHANNEL = "pool_capture";
     private static final String TAG = "PoolPro";
 
-    private static final int MAX_FRAMES = 10;
-    private static final long FRAME_INTERVAL = 1000;
-
     private MediaProjection projection;
-    private VirtualDisplay virtualDisplay;
-    private ImageReader imageReader;
+    private VirtualDisplay display;
+    private ImageReader reader;
     private HandlerThread thread;
     private Handler handler;
 
-    private long lastSaveTime = 0;
-    private int savedFrames = 0;
+    private int screenW, screenH;
+    private long lastFrame;
 
     @Override
     public void onCreate() {
@@ -57,23 +37,20 @@ public class AimCaptureService extends Service {
 
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID,
-                    "Pool capture",
-                    NotificationManager.IMPORTANCE_LOW
-            );
-
+                    CHANNEL, "Pool Pro Capture",
+                    NotificationManager.IMPORTANCE_LOW);
             getSystemService(NotificationManager.class)
                     .createNotificationChannel(channel);
 
-            startForeground(7, new Notification.Builder(this, CHANNEL_ID)
+            startForeground(7, new Notification.Builder(this, CHANNEL)
                     .setContentTitle("Saqib Pool Pro")
-                    .setContentText("Capturing pool gameplay frames")
+                    .setContentText("Live guide detection")
                     .setSmallIcon(android.R.drawable.ic_menu_camera)
                     .build());
         } else {
             startForeground(7, new Notification.Builder(this)
                     .setContentTitle("Saqib Pool Pro")
-                    .setContentText("Capturing pool gameplay frames")
+                    .setContentText("Live guide detection")
                     .setSmallIcon(android.R.drawable.ic_menu_camera)
                     .build());
         }
@@ -81,15 +58,11 @@ public class AimCaptureService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent == null || projection != null) return START_NOT_STICKY;
 
-        if (intent == null) {
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-
-        int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
-
+        int result = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
         Intent data;
+
         if (Build.VERSION.SDK_INT >= 33) {
             data = intent.getParcelableExtra(EXTRA_DATA, Intent.class);
         } else {
@@ -97,291 +70,271 @@ public class AimCaptureService extends Service {
         }
 
         if (data == null) {
-            Log.e(TAG, "Projection data missing");
             stopSelf();
             return START_NOT_STICKY;
         }
 
         try {
             MediaProjectionManager manager =
-                    (MediaProjectionManager)
-                    getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+                    (MediaProjectionManager) getSystemService(
+                            MEDIA_PROJECTION_SERVICE);
 
-            projection = manager.getMediaProjection(resultCode, data);
+            projection = manager.getMediaProjection(result, data);
 
-            if (projection == null) {
-                Log.e(TAG, "MediaProjection is null");
-                stopSelf();
-                return START_NOT_STICKY;
-            }
-
-            DisplayMetrics metrics = new DisplayMetrics();
-
+            DisplayMetrics dm = new DisplayMetrics();
             android.view.WindowManager wm =
-                    (android.view.WindowManager)
-                    getSystemService(WINDOW_SERVICE);
+                    (android.view.WindowManager) getSystemService(WINDOW_SERVICE);
+            wm.getDefaultDisplay().getRealMetrics(dm);
 
-            wm.getDefaultDisplay().getRealMetrics(metrics);
+            screenW = dm.widthPixels;
+            screenH = dm.heightPixels;
 
-            int screenW = metrics.widthPixels;
-            int screenH = metrics.heightPixels;
-
-            thread = new HandlerThread("PoolFrameCapture");
+            thread = new HandlerThread("PoolLiveDetector");
             thread.start();
             handler = new Handler(thread.getLooper());
 
-            imageReader = ImageReader.newInstance(
-                    screenW,
-                    screenH,
-                    PixelFormat.RGBA_8888,
-                    3
-            );
+            reader = ImageReader.newInstance(
+                    screenW, screenH, PixelFormat.RGBA_8888, 3);
 
-            imageReader.setOnImageAvailableListener(reader -> {
+            reader.setOnImageAvailableListener(r -> {
                 Image image = null;
-
                 try {
-                    image = reader.acquireLatestImage();
+                    image = r.acquireLatestImage();
                     if (image == null) return;
 
                     long now = System.currentTimeMillis();
+                    if (now - lastFrame < 250) return;
+                    lastFrame = now;
 
-                    if (savedFrames >= MAX_FRAMES) return;
-                    if (now - lastSaveTime < FRAME_INTERVAL) return;
-
-                    // Save only when pool-table felt is visible.
-                    if (!isPoolTableVisible(image)) return;
-
-                    lastSaveTime = now;
-
-                    if (saveFrame(image, savedFrames + 1)) {
-                        savedFrames++;
-                        Log.d(TAG, "Saved gameplay frame " + savedFrames);
-
-                        if (savedFrames >= MAX_FRAMES) {
-                            Log.d(TAG, "All diagnostic frames saved");
-                        }
-                    }
+                    detectLines(image);
 
                 } catch (Exception e) {
-                    Log.e(TAG, "Frame capture error", e);
+                    Log.e(TAG, "Detection error", e);
                 } finally {
                     if (image != null) image.close();
                 }
             }, handler);
 
-            projection.registerCallback(
-                    new MediaProjection.Callback() {
-                        @Override
-                        public void onStop() {
-                            stopSelf();
-                        }
-                    },
-                    handler
-            );
+            projection.registerCallback(new MediaProjection.Callback() {
+                @Override
+                public void onStop() {
+                    stopSelf();
+                }
+            }, handler);
 
-            virtualDisplay = projection.createVirtualDisplay(
-                    "PoolFrameCapture",
-                    screenW,
-                    screenH,
-                    metrics.densityDpi,
+            display = projection.createVirtualDisplay(
+                    "PoolLiveCapture",
+                    screenW, screenH, dm.densityDpi,
                     DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                    imageReader.getSurface(),
-                    null,
-                    handler
-            );
+                    reader.getSurface(), null, handler);
 
-            Log.d(TAG, "Capture started: " + screenW + "x" + screenH);
+            Log.d(TAG, "Live capture started " + screenW + "x" + screenH);
 
         } catch (Exception e) {
-            Log.e(TAG, "Capture start failed", e);
+            Log.e(TAG, "Could not start capture", e);
             stopSelf();
         }
 
         return START_NOT_STICKY;
     }
 
-    private boolean isPoolTableVisible(Image image) {
+    /*
+     * Hough-style white-line detector.
+     * It searches for long, bright, nearly-neutral lines in the
+     * central gameplay area. It does not save screenshots.
+     */
+    private void detectLines(Image image) {
 
         Image.Plane[] planes = image.getPlanes();
-        if (planes == null || planes.length == 0) return false;
+        if (planes == null || planes.length == 0) return;
 
-        ByteBuffer b = planes[0].getBuffer().duplicate();
-
-        int width = image.getWidth();
-        int height = image.getHeight();
-
+        ByteBuffer buffer = planes[0].getBuffer().duplicate();
         int rowStride = planes[0].getRowStride();
         int pixelStride = planes[0].getPixelStride();
 
-        int feltPixels = 0;
+        int gw = 320;
+        int gh = Math.max(180, (int) (320f * screenH / screenW));
 
-        // Sample the central part of the screen.
-        for (int y = height / 4; y < height * 3 / 4; y += 12) {
-            for (int x = width / 8; x < width * 7 / 8; x += 12) {
+        int angleCount = 60; // 3-degree increments
+        int diag = (int) Math.sqrt(gw * gw + gh * gh);
+        int rhoCount = diag * 2 + 1;
+        int[][] acc = new int[angleCount][rhoCount];
 
-                int index = y * rowStride + x * pixelStride;
-                if (index + 2 >= b.limit()) continue;
+        double[] cos = new double[angleCount];
+        double[] sin = new double[angleCount];
 
-                int r = b.get(index) & 255;
-                int g = b.get(index + 1) & 255;
-                int blue = b.get(index + 2) & 255;
-
-                // Green / turquoise pool-table felt.
-                boolean felt =
-                        g > 65 &&
-                        g > r * 1.12f &&
-                        blue > 45 &&
-                        Math.abs(g - blue) < 115;
-
-                if (felt) feltPixels++;
-            }
+        for (int a = 0; a < angleCount; a++) {
+            double rad = Math.toRadians(a * 3);
+            cos[a] = Math.cos(rad);
+            sin[a] = Math.sin(rad);
         }
 
-        return feltPixels >= 35;
-    }
+        int xStart = gw / 12;
+        int xEnd = gw - xStart;
+        int yStart = gh / 8;
+        int yEnd = gh - gh / 8;
 
-    private boolean saveFrame(Image image, int frameNumber) {
+        for (int gy = yStart; gy < yEnd; gy += 1) {
+            int sy = gy * screenH / gh;
 
-        int width = image.getWidth();
-        int height = image.getHeight();
+            for (int gx = xStart; gx < xEnd; gx += 1) {
+                int sx = gx * screenW / gw;
+                int index = sy * rowStride + sx * pixelStride;
 
-        Image.Plane[] planes = image.getPlanes();
-        if (planes == null || planes.length == 0) return false;
-
-        Image.Plane plane = planes[0];
-        ByteBuffer buffer = plane.getBuffer().duplicate();
-
-        int rowStride = plane.getRowStride();
-        int pixelStride = plane.getPixelStride();
-
-        int[] pixels = new int[width * height];
-
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-
-                int index = y * rowStride + x * pixelStride;
-
-                if (index + 3 >= buffer.limit()) continue;
+                if (index + 2 >= buffer.limit()) continue;
 
                 int r = buffer.get(index) & 255;
                 int g = buffer.get(index + 1) & 255;
-                int blue = buffer.get(index + 2) & 255;
-                int a = buffer.get(index + 3) & 255;
+                int b = buffer.get(index + 2) & 255;
 
-                pixels[y * width + x] =
-                        (a << 24) | (r << 16) | (g << 8) | blue;
+                boolean white = r > 205 && g > 205 && b > 205
+                        && Math.abs(r - g) < 38
+                        && Math.abs(g - b) < 38;
+
+                if (!white) continue;
+
+                for (int a = 0; a < angleCount; a++) {
+                    int rho = (int) Math.round(
+                            gx * cos[a] + gy * sin[a]) + diag;
+
+                    if (rho >= 0 && rho < rhoCount) {
+                        acc[a][rho]++;
+                    }
+                }
             }
         }
 
-        Bitmap bitmap = Bitmap.createBitmap(
-                pixels,
-                width,
-                height,
-                Bitmap.Config.ARGB_8888
-        );
+        ArrayList<Line> found = new ArrayList<>();
 
-        try {
-            ContentValues values = new ContentValues();
+        for (int n = 0; n < 2; n++) {
+            int bestA = -1, bestR = -1, bestVotes = 0;
 
-            values.put(
-                    MediaStore.Images.Media.DISPLAY_NAME,
-                    "PoolPro_Frame_" + frameNumber + ".png"
+            for (int a = 0; a < angleCount; a++) {
+                for (int r = 0; r < rhoCount; r++) {
+                    if (acc[a][r] > bestVotes) {
+                        bestVotes = acc[a][r];
+                        bestA = a;
+                        bestR = r;
+                    }
+                }
+            }
+
+            // Ignore short or weak white features.
+            if (bestA < 0 || bestVotes < 18) break;
+
+            double theta = Math.toRadians(bestA * 3);
+            double rho = bestR - diag;
+
+            float[] p = clipLine(
+                    (float) Math.cos(theta),
+                    (float) Math.sin(theta),
+                    (float) rho,
+                    screenW * 0.08f,
+                    screenH * 0.12f,
+                    screenW * 0.92f,
+                    screenH * 0.88f
             );
 
-            values.put(
-                    MediaStore.Images.Media.MIME_TYPE,
-                    "image/png"
-            );
-
-            if (Build.VERSION.SDK_INT >= 29) {
-                values.put(
-                        MediaStore.Images.Media.RELATIVE_PATH,
-                        Environment.DIRECTORY_PICTURES
-                                + "/SaqibPoolPro"
-                );
-
-                values.put(
-                        MediaStore.Images.Media.IS_PENDING,
-                        1
-                );
+            if (p != null) {
+                found.add(new Line(p[0], p[1], p[2], p[3]));
             }
 
-            Uri uri = getContentResolver().insert(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    values
-            );
+            // Suppress nearby peaks so the same line is not selected twice.
+            for (int a = 0; a < angleCount; a++) {
+                int angleDiff = Math.abs(a - bestA);
+                angleDiff = Math.min(angleDiff, angleCount - angleDiff);
 
-            if (uri == null) {
-                Log.e(TAG, "Could not create image entry");
-                return false;
+                if (angleDiff <= 3) {
+                    for (int rr = 0; rr < rhoCount; rr++) {
+                        if (Math.abs(rr - bestR) < 22) {
+                            acc[a][rr] = 0;
+                        }
+                    }
+                }
+            }
+        }
+
+        Intent out = new Intent(ACTION_LINES);
+        out.setPackage(getPackageName());
+
+        if (found.size() > 0) {
+            float[] values = new float[found.size() * 4];
+
+            for (int i = 0; i < found.size(); i++) {
+                Line line = found.get(i);
+                values[i * 4] = line.x1;
+                values[i * 4 + 1] = line.y1;
+                values[i * 4 + 2] = line.x2;
+                values[i * 4 + 3] = line.y2;
             }
 
-            OutputStream output =
-                    getContentResolver().openOutputStream(uri);
+            out.putExtra("lines", values);
+        } else {
+            out.putExtra("lines", new float[0]);
+        }
 
-            if (output == null) {
-                getContentResolver().delete(uri, null, null);
-                return false;
-            }
+        sendBroadcast(out);
+    }
 
-            boolean compressed;
+    // Clip an infinite Hough line to the gameplay rectangle.
+    private float[] clipLine(float a, float b, float rho,
+                             float left, float top,
+                             float right, float bottom) {
 
-            try (OutputStream stream = output) {
-                compressed = bitmap.compress(
-                        Bitmap.CompressFormat.PNG,
-                        100,
-                        stream
-                );
-                stream.flush();
-            }
+        ArrayList<float[]> pts = new ArrayList<>();
 
-            if (!compressed) {
-                getContentResolver().delete(uri, null, null);
-                return false;
-            }
+        if (Math.abs(b) > 0.0001f) {
+            addPoint(pts, left, (rho - a * left) / b,
+                    left, top, right, bottom);
+            addPoint(pts, right, (rho - a * right) / b,
+                    left, top, right, bottom);
+        }
 
-            if (Build.VERSION.SDK_INT >= 29) {
-                ContentValues done = new ContentValues();
-                done.put(MediaStore.Images.Media.IS_PENDING, 0);
+        if (Math.abs(a) > 0.0001f) {
+            addPoint(pts, (rho - b * top) / a, top,
+                    left, top, right, bottom);
+            addPoint(pts, (rho - b * bottom) / a, bottom,
+                    left, top, right, bottom);
+        }
 
-                getContentResolver().update(uri, done, null, null);
-            }
+        if (pts.size() < 2) return null;
 
-            Log.d(TAG, "Image saved: " + uri);
-            return true;
+        float[] p1 = pts.get(0);
+        float[] p2 = pts.get(1);
 
-        } catch (Exception e) {
-            Log.e(TAG, "Image save failed", e);
-            return false;
+        return new float[]{p1[0], p1[1], p2[0], p2[1]};
+    }
 
-        } finally {
-            bitmap.recycle();
+    private void addPoint(ArrayList<float[]> pts,
+                          float x, float y,
+                          float left, float top,
+                          float right, float bottom) {
+        if (x < left || x > right || y < top || y > bottom) return;
+
+        for (float[] p : pts) {
+            if (Math.abs(p[0] - x) < 2 && Math.abs(p[1] - y) < 2) return;
+        }
+        pts.add(new float[]{x, y});
+    }
+
+    private static class Line {
+        float x1, y1, x2, y2;
+        Line(float a, float b, float c, float d) {
+            x1 = a; y1 = b; x2 = c; y2 = d;
         }
     }
 
     @Override
     public void onDestroy() {
+        if (display != null) display.release();
+        if (reader != null) reader.close();
+        if (projection != null) projection.stop();
+        if (thread != null) thread.quitSafely();
 
-        if (virtualDisplay != null) {
-            virtualDisplay.release();
-            virtualDisplay = null;
-        }
-
-        if (imageReader != null) {
-            imageReader.close();
-            imageReader = null;
-        }
-
-        if (projection != null) {
-            projection.stop();
-            projection = null;
-        }
-
-        if (thread != null) {
-            thread.quitSafely();
-            thread = null;
-        }
+        display = null;
+        reader = null;
+        projection = null;
+        thread = null;
 
         stopForeground(true);
         super.onDestroy();
