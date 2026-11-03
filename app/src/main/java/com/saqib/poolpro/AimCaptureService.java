@@ -22,8 +22,10 @@ import android.util.DisplayMetrics;
 import android.util.Log;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -36,6 +38,7 @@ public class AimCaptureService extends Service {
     private static final String TAG = "PoolProDiagnostic";
     private static final String CHANNEL_ID = "pool_capture";
     private static final int NOTIFICATION_ID = 7;
+    private static final int SAMPLE_STEP = 2;
 
     private MediaProjection projection;
     private VirtualDisplay virtualDisplay;
@@ -48,9 +51,9 @@ public class AimCaptureService extends Service {
     private int frameCount;
 
     private static class Point {
-        float x, y;
+        int x, y;
 
-        Point(float x, float y) {
+        Point(int x, int y) {
             this.x = x;
             this.y = y;
         }
@@ -59,13 +62,16 @@ public class AimCaptureService extends Service {
     private static class Line {
         float x1, y1, x2, y2;
         int votes;
+        float error;
 
-        Line(float x1, float y1, float x2, float y2, int votes) {
+        Line(float x1, float y1, float x2, float y2,
+             int votes, float error) {
             this.x1 = x1;
             this.y1 = y1;
             this.x2 = x2;
             this.y2 = y2;
             this.votes = votes;
+            this.error = error;
         }
 
         float length() {
@@ -92,7 +98,7 @@ public class AimCaptureService extends Service {
         createNotificationChannel();
         startForeground(
                 NOTIFICATION_ID,
-                buildNotification("Diagnostic mode starting"));
+                buildNotification("White-line detector starting"));
     }
 
     @Override
@@ -161,20 +167,16 @@ public class AimCaptureService extends Service {
                     frameCount++;
 
                     List<Point> points = getWhitePoints(image);
-
                     List<Line> lines =
-                            findCandidates(points, width, height);
+                            findConnectedLines(points, width, height);
 
-                    // Diagnostic mode: overlay hamesha clear rahega.
+                    // Diagnostic mode: overlay clear rahega.
                     sendClear(width, height);
 
                     if (now - lastNotificationTime >= 1500) {
                         lastNotificationTime = now;
-
-                        String report = makeReport(
-                                lines, points.size(), width, height);
-
-                        updateNotification(report);
+                        updateNotification(makeReport(
+                                lines, points.size(), width, height));
                     }
 
                 } catch (Exception e) {
@@ -205,7 +207,7 @@ public class AimCaptureService extends Service {
                     worker
             );
 
-            updateNotification("Diagnostic running - aim at a ball");
+            updateNotification("White-pixel diagnostic running");
 
         } catch (Exception e) {
             Log.e(TAG, "Capture start failed", e);
@@ -216,8 +218,8 @@ public class AimCaptureService extends Service {
     }
 
     /*
-     * Screen ke white pixels sirf RAM mein read hote hain.
-     * Koi screenshot ya image file save nahi hoti.
+     * White pixels RAM mein read hote hain.
+     * Screenshot ya image file save nahi hoti.
      */
     private List<Point> getWhitePoints(Image image) {
 
@@ -234,18 +236,15 @@ public class AimCaptureService extends Service {
         int rowStride = plane.getRowStride();
         int pixelStride = plane.getPixelStride();
 
-        int step = 2;
-
         int left = width / 12;
         int right = width * 11 / 12;
         int top = height / 10;
         int bottom = height * 9 / 10;
 
-        for (int y = top; y < bottom; y += step) {
-            for (int x = left; x < right; x += step) {
+        for (int y = top; y < bottom; y += SAMPLE_STEP) {
+            for (int x = left; x < right; x += SAMPLE_STEP) {
 
                 int pos = y * rowStride + x * pixelStride;
-
                 if (pos + 2 >= buffer.limit()) continue;
 
                 int r = buffer.get(pos) & 255;
@@ -265,162 +264,170 @@ public class AimCaptureService extends Service {
     }
 
     /*
-     * White pixels se candidate straight segments nikalta hai.
-     * Yeh abhi asli game guide lines ki confirmation nahi hai.
+     * 8-neighbour connected components.
+     * Har connected white group ko alag rakhta hai.
      */
-    private List<Line> findCandidates(
+    private List<Line> findConnectedLines(
             List<Point> points, int width, int height) {
 
-        List<Line> result = new ArrayList<>();
+        List<Line> lines = new ArrayList<>();
 
-        if (points.size() < 8) return result;
+        int gridW = width / SAMPLE_STEP + 2;
+        int gridH = height / SAMPLE_STEP + 2;
 
-        List<Point> remaining = new ArrayList<>(points);
-
-        for (int attempt = 0; attempt < 6; attempt++) {
-
-            Line line = findOneLine(remaining, width, height);
-
-            if (line == null) break;
-
-            result.add(line);
-
-            List<Point> filtered = new ArrayList<>();
-
-            for (Point p : remaining) {
-                if (distanceFromLine(p, line) > 5) {
-                    filtered.add(p);
-                }
-            }
-
-            remaining = filtered;
-        }
-
-        return result;
-    }
-
-    private Line findOneLine(
-            List<Point> points, int width, int height) {
-
-        if (points.size() < 6) return null;
-
-        double diagonal = Math.hypot(width, height);
-        int rhoStep = 2;
-        int rhoCount = (int) (2 * diagonal / rhoStep) + 2;
-
-        int[][] accumulator = new int[180][rhoCount];
-
-        double[] cos = new double[180];
-        double[] sin = new double[180];
-
-        for (int a = 0; a < 180; a++) {
-            double rad = Math.toRadians(a);
-            cos[a] = Math.cos(rad);
-            sin[a] = Math.sin(rad);
-        }
+        boolean[][] occupied = new boolean[gridH][gridW];
+        boolean[][] visited = new boolean[gridH][gridW];
 
         for (Point p : points) {
-            for (int a = 0; a < 180; a++) {
+            int gx = p.x / SAMPLE_STEP;
+            int gy = p.y / SAMPLE_STEP;
 
-                double rho = p.x * cos[a] + p.y * sin[a];
+            if (gx >= 0 && gx < gridW &&
+                    gy >= 0 && gy < gridH) {
+                occupied[gy][gx] = true;
+            }
+        }
 
-                int index = (int) Math.round(
-                        (rho + diagonal) / rhoStep);
+        int[] dx = {-1, 0, 1, -1, 1, -1, 0, 1};
+        int[] dy = {-1, -1, -1, 0, 0, 1, 1, 1};
 
-                if (index >= 0 && index < rhoCount) {
-                    accumulator[a][index]++;
+        for (int gy = 0; gy < gridH; gy++) {
+            for (int gx = 0; gx < gridW; gx++) {
+
+                if (!occupied[gy][gx] || visited[gy][gx]) {
+                    continue;
+                }
+
+                List<Point> component = new ArrayList<>();
+                ArrayDeque<int[]> queue = new ArrayDeque<>();
+
+                queue.add(new int[]{gx, gy});
+                visited[gy][gx] = true;
+
+                while (!queue.isEmpty()) {
+
+                    int[] current = queue.removeFirst();
+                    int cx = current[0];
+                    int cy = current[1];
+
+                    component.add(new Point(
+                            cx * SAMPLE_STEP,
+                            cy * SAMPLE_STEP));
+
+                    for (int k = 0; k < 8; k++) {
+
+                        int nx = cx + dx[k];
+                        int ny = cy + dy[k];
+
+                        if (nx < 0 || ny < 0 ||
+                                nx >= gridW || ny >= gridH) {
+                            continue;
+                        }
+
+                        if (occupied[ny][nx] &&
+                                !visited[ny][nx]) {
+
+                            visited[ny][nx] = true;
+                            queue.addLast(new int[]{nx, ny});
+                        }
+                    }
+                }
+
+                if (component.size() < 4) continue;
+
+                Line line = fitLine(component);
+
+                if (line != null &&
+                        line.length() >= 10 &&
+                        line.error <= 4.0f) {
+                    lines.add(line);
                 }
             }
         }
 
-        int bestAngle = -1;
-        int bestRho = -1;
-        int bestVotes = 0;
-
-        for (int a = 0; a < 180; a++) {
-            for (int r = 0; r < rhoCount; r++) {
-
-                if (accumulator[a][r] > bestVotes) {
-                    bestVotes = accumulator[a][r];
-                    bestAngle = a;
-                    bestRho = r;
-                }
+        Collections.sort(lines, new Comparator<Line>() {
+            @Override
+            public int compare(Line a, Line b) {
+                return Float.compare(b.length(), a.length());
             }
+        });
+
+        if (lines.size() > 12) {
+            return new ArrayList<>(lines.subList(0, 12));
         }
 
-        if (bestAngle < 0 || bestVotes < 5) return null;
+        return lines;
+    }
 
-        double c = cos[bestAngle];
-        double s = sin[bestAngle];
-        double rho = bestRho * rhoStep - diagonal;
+    /*
+     * PCA se component ki main direction aur endpoints.
+     */
+    private Line fitLine(List<Point> points) {
 
-        List<Double> projections = new ArrayList<>();
+        if (points.size() < 4) return null;
+
+        double meanX = 0;
+        double meanY = 0;
+
+        for (Point p : points) {
+            meanX += p.x;
+            meanY += p.y;
+        }
+
+        meanX /= points.size();
+        meanY /= points.size();
+
+        double xx = 0;
+        double yy = 0;
+        double xy = 0;
+
+        for (Point p : points) {
+            double dx = p.x - meanX;
+            double dy = p.y - meanY;
+
+            xx += dx * dx;
+            yy += dy * dy;
+            xy += dx * dy;
+        }
+
+        double angle = 0.5 * Math.atan2(
+                2 * xy, xx - yy);
+
+        double ux = Math.cos(angle);
+        double uy = Math.sin(angle);
+
+        double minProjection = Double.MAX_VALUE;
+        double maxProjection = -Double.MAX_VALUE;
+        double errorSum = 0;
 
         for (Point p : points) {
 
-            double distance = Math.abs(
-                    p.x * c + p.y * s - rho);
+            double dx = p.x - meanX;
+            double dy = p.y - meanY;
 
-            if (distance <= 4) {
-                projections.add(-p.x * s + p.y * c);
-            }
+            double projection = dx * ux + dy * uy;
+
+            minProjection = Math.min(
+                    minProjection, projection);
+            maxProjection = Math.max(
+                    maxProjection, projection);
+
+            double perpendicular =
+                    -dx * uy + dy * ux;
+
+            errorSum += perpendicular * perpendicular;
         }
 
-        if (projections.size() < 5) return null;
+        float error = (float) Math.sqrt(
+                errorSum / points.size());
 
-        Collections.sort(projections);
+        float x1 = (float) (meanX + minProjection * ux);
+        float y1 = (float) (meanY + minProjection * uy);
+        float x2 = (float) (meanX + maxProjection * ux);
+        float y2 = (float) (meanY + maxProjection * uy);
 
-        double start = projections.get(0);
-        double previous = start;
-        double bestStart = start;
-        double bestEnd = start;
-
-        for (int i = 1; i < projections.size(); i++) {
-
-            double value = projections.get(i);
-
-            if (value - previous > 14) {
-
-                if (previous - start > bestEnd - bestStart) {
-                    bestStart = start;
-                    bestEnd = previous;
-                }
-
-                start = value;
-            }
-
-            previous = value;
-        }
-
-        if (previous - start > bestEnd - bestStart) {
-            bestStart = start;
-            bestEnd = previous;
-        }
-
-        double length = bestEnd - bestStart;
-
-        if (length < 10) return null;
-
-        float x1 = (float) (rho * c - bestStart * s);
-        float y1 = (float) (rho * s + bestStart * c);
-        float x2 = (float) (rho * c - bestEnd * s);
-        float y2 = (float) (rho * s + bestEnd * c);
-
-        return new Line(x1, y1, x2, y2, bestVotes);
-    }
-
-    private double distanceFromLine(Point p, Line line) {
-
-        double dx = line.x2 - line.x1;
-        double dy = line.y2 - line.y1;
-        double length = Math.hypot(dx, dy);
-
-        if (length < 1) return Double.MAX_VALUE;
-
-        return Math.abs(
-                dx * (line.y1 - p.y)
-                        - (line.x1 - p.x) * dy
-        ) / length;
+        return new Line(
+                x1, y1, x2, y2, points.size(), error);
     }
 
     private String makeReport(
@@ -433,24 +440,31 @@ public class AimCaptureService extends Service {
 
         report.append("Frames: ").append(frameCount)
                 .append(" | White: ").append(whiteCount)
-                .append(" | Segments: ").append(lines.size());
+                .append(" | Components: ").append(lines.size());
 
         for (int i = 0; i < lines.size(); i++) {
 
             Line line = lines.get(i);
 
             report.append("\nL").append(i + 1)
-                    .append(" X:")
-                    .append(Math.round(line.centerX()))
-                    .append(" Y:")
-                    .append(Math.round(line.centerY()))
+                    .append(" P1:")
+                    .append(Math.round(line.x1))
+                    .append(",")
+                    .append(Math.round(line.y1))
+                    .append(" P2:")
+                    .append(Math.round(line.x2))
+                    .append(",")
+                    .append(Math.round(line.y2))
                     .append(" A:")
                     .append(String.format(
                             Locale.US, "%.0f", line.angle()))
                     .append(" Len:")
                     .append(Math.round(line.length()))
-                    .append(" V:")
-                    .append(line.votes);
+                    .append(" N:")
+                    .append(line.votes)
+                    .append(" E:")
+                    .append(String.format(
+                            Locale.US, "%.1f", line.error));
         }
 
         report.append("\nScreen: ")
@@ -465,11 +479,8 @@ public class AimCaptureService extends Service {
 
         Intent update = new Intent(ACTION_LINE);
         update.setPackage(getPackageName());
-
         update.putExtra("width", width);
         update.putExtra("height", height);
-
-        // Null lines overlay ko clear karti hain.
         sendBroadcast(update);
     }
 
@@ -551,4 +562,4 @@ public class AimCaptureService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-                }
+    }
