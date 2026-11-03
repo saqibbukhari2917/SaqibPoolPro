@@ -22,6 +22,8 @@ import android.util.DisplayMetrics;
 import android.util.Log;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
 
 public class AimCaptureService extends Service {
 
@@ -59,6 +61,7 @@ public class AimCaptureService extends Service {
         int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
 
         Intent data;
+
         if (Build.VERSION.SDK_INT >= 33) {
             data = intent.getParcelableExtra(EXTRA_DATA, Intent.class);
         } else {
@@ -83,6 +86,7 @@ public class AimCaptureService extends Service {
             }
 
             DisplayMetrics metrics = new DisplayMetrics();
+
             android.view.WindowManager wm =
                     (android.view.WindowManager)
                             getSystemService(WINDOW_SERVICE);
@@ -94,12 +98,18 @@ public class AimCaptureService extends Service {
 
             workerThread = new HandlerThread("PoolAimDetector");
             workerThread.start();
+
             worker = new Handler(workerThread.getLooper());
 
             imageReader = ImageReader.newInstance(
-                    width, height, PixelFormat.RGBA_8888, 2);
+                    width,
+                    height,
+                    PixelFormat.RGBA_8888,
+                    2
+            );
 
             imageReader.setOnImageAvailableListener(reader -> {
+
                 Image image = null;
 
                 try {
@@ -113,13 +123,16 @@ public class AimCaptureService extends Service {
 
                     lastFrameTime = now;
 
-                    detectAimLine(image);
+                    detectAimLines(image);
 
                 } catch (Exception e) {
                     Log.e("PoolPro", "Aim detection error", e);
                 } finally {
-                    if (image != null) image.close();
+                    if (image != null) {
+                        image.close();
+                    }
                 }
+
             }, worker);
 
             projection.registerCallback(
@@ -128,7 +141,9 @@ public class AimCaptureService extends Service {
                         public void onStop() {
                             stopSelf();
                         }
-                    }, worker);
+                    },
+                    worker
+            );
 
             virtualDisplay = projection.createVirtualDisplay(
                     "SaqibPoolProCapture",
@@ -149,12 +164,13 @@ public class AimCaptureService extends Service {
         return START_NOT_STICKY;
     }
 
-    private void detectAimLine(Image image) {
+    private void detectAimLines(Image image) {
 
         int width = image.getWidth();
         int height = image.getHeight();
 
         Image.Plane[] planes = image.getPlanes();
+
         if (planes.length == 0) return;
 
         ByteBuffer buffer = planes[0].getBuffer().duplicate();
@@ -163,18 +179,21 @@ public class AimCaptureService extends Service {
         int pixelStride = planes[0].getPixelStride();
 
         int step = 2;
+
         int gw = width / step;
         int gh = height / step;
 
-        // Approximate playing-area crop.
-        // This is a starting estimate, not exact cushion detection.
-        int left = (int)(gw * 0.10f);
-        int right = (int)(gw * 0.90f);
-        int top = (int)(gh * 0.12f);
-        int bottom = (int)(gh * 0.92f);
+        // Approximate table boundaries
+        int left = (int) (gw * 0.10f);
+        int right = (int) (gw * 0.90f);
+        int top = (int) (gh * 0.12f);
+        int bottom = (int) (gh * 0.92f);
 
         int angleCount = 180;
-        int diagonal = (int)Math.sqrt(gw * gw + gh * gh);
+
+        int diagonal =
+                (int) Math.sqrt(gw * gw + gh * gh);
+
         int rhoSize = diagonal * 2 + 1;
 
         int[][] accumulator =
@@ -184,14 +203,16 @@ public class AimCaptureService extends Service {
         double[] sin = new double[angleCount];
 
         for (int a = 0; a < angleCount; a++) {
+
             double theta = Math.PI * a / angleCount;
+
             cos[a] = Math.cos(theta);
             sin[a] = Math.sin(theta);
         }
 
         int whiteCount = 0;
 
-        // Find bright, nearly neutral pixels.
+        // Detect bright neutral pixels
         for (int y = top; y < bottom; y++) {
 
             for (int x = left; x < right; x++) {
@@ -199,9 +220,12 @@ public class AimCaptureService extends Service {
                 int px = x * step;
                 int py = y * step;
 
-                int pos = py * rowStride + px * pixelStride;
+                int pos =
+                        py * rowStride + px * pixelStride;
 
-                if (pos < 0 || pos + 2 >= buffer.limit()) continue;
+                if (pos < 0 || pos + 2 >= buffer.limit()) {
+                    continue;
+                }
 
                 int r = buffer.get(pos) & 255;
                 int g = buffer.get(pos + 1) & 255;
@@ -210,15 +234,17 @@ public class AimCaptureService extends Service {
                 int max = Math.max(r, Math.max(g, b));
                 int min = Math.min(r, Math.min(g, b));
 
-                // Bright neutral pixels only.
-                if (min < 175 || max - min > 55) continue;
+                if (min < 175 || max - min > 55) {
+                    continue;
+                }
 
                 whiteCount++;
 
                 for (int a = 0; a < angleCount; a++) {
 
-                    int rho = (int)Math.round(
-                            x * cos[a] + y * sin[a]);
+                    int rho = (int) Math.round(
+                            x * cos[a] + y * sin[a]
+                    );
 
                     rho += diagonal;
 
@@ -229,11 +255,16 @@ public class AimCaptureService extends Service {
             }
         }
 
+        if (whiteCount < 25) {
+            sendLines(null, width, height);
+            return;
+        }
+
+        // Find first line
         int bestAngle = -1;
         int bestRho = -1;
         int bestVotes = 0;
 
-        // Find strongest straight-line candidate.
         for (int a = 0; a < angleCount; a++) {
 
             for (int r = 0; r < rhoSize; r++) {
@@ -248,93 +279,230 @@ public class AimCaptureService extends Service {
             }
         }
 
-        // Avoid displaying random short highlights.
-        if (bestAngle < 0 || bestVotes < 18 || whiteCount < 25) {
-            sendLine(null, width, height);
+        if (bestAngle < 0 || bestVotes < 18) {
+            sendLines(null, width, height);
             return;
         }
 
-        double nx = cos[bestAngle];
-        double ny = sin[bestAngle];
+        // Find second line, excluding nearby first-line peaks
+        int secondAngle = -1;
+        int secondRho = -1;
+        int secondVotes = 0;
 
-        double rho = bestRho - diagonal;
+        for (int a = 0; a < angleCount; a++) {
 
-        // Line equation: x*cos + y*sin = rho
-        // Find intersections with estimated playing-area bounds.
-        double x1 = Double.NaN;
-        double y1 = Double.NaN;
-        double x2 = Double.NaN;
-        double y2 = Double.NaN;
+            for (int r = 0; r < rhoSize; r++) {
 
-        double[] p = new double[2];
+                if (Math.abs(a - bestAngle) <= 6
+                        && Math.abs(r - bestRho) <= 12) {
+                    continue;
+                }
+
+                int votes = accumulator[a][r];
+
+                if (votes > secondVotes) {
+                    secondVotes = votes;
+                    secondAngle = a;
+                    secondRho = r;
+                }
+            }
+        }
+
+        float[] first = lineToBounds(
+                bestAngle,
+                bestRho,
+                diagonal,
+                cos,
+                sin,
+                left,
+                top,
+                right,
+                bottom
+        );
+
+        float[] second = null;
+
+        if (secondAngle >= 0
+                && secondVotes >= Math.max(12, bestVotes / 3)) {
+
+            second = lineToBounds(
+                    secondAngle,
+                    secondRho,
+                    diagonal,
+                    cos,
+                    sin,
+                    left,
+                    top,
+                    right,
+                    bottom
+            );
+        }
+
+        if (first == null) {
+            sendLines(null, width, height);
+            return;
+        }
+
+        float[] result;
+
+        if (second != null) {
+
+            result = new float[] {
+                    first[0] * step,
+                    first[1] * step,
+                    first[2] * step,
+                    first[3] * step,
+
+                    second[0] * step,
+                    second[1] * step,
+                    second[2] * step,
+                    second[3] * step
+            };
+
+        } else {
+
+            result = new float[] {
+                    first[0] * step,
+                    first[1] * step,
+                    first[2] * step,
+                    first[3] * step
+            };
+        }
+
+        sendLines(result, width, height);
+    }
+
+    private float[] lineToBounds(
+            int angle,
+            int rhoIndex,
+            int diagonal,
+            double[] cos,
+            double[] sin,
+            int left,
+            int top,
+            int right,
+            int bottom) {
+
+        double nx = cos[angle];
+        double ny = sin[angle];
+
+        double rho = rhoIndex - diagonal;
+
+        List<float[]> points = new ArrayList<>();
 
         if (Math.abs(ny) > 0.0001) {
 
-            double y = (rho - left * nx) / ny;
-            if (y >= top && y <= bottom) {
-                x1 = left;
-                y1 = y;
-            }
+            addPoint(
+                    points,
+                    left,
+                    (rho - left * nx) / ny,
+                    left, top, right, bottom
+            );
 
-            y = (rho - right * nx) / ny;
-            if (y >= top && y <= bottom) {
-                if (Double.isNaN(x1)) {
-                    x1 = right;
-                    y1 = y;
-                } else {
-                    x2 = right;
-                    y2 = y;
-                }
-            }
+            addPoint(
+                    points,
+                    right,
+                    (rho - right * nx) / ny,
+                    left, top, right, bottom
+            );
         }
 
         if (Math.abs(nx) > 0.0001) {
 
-            double x = (rho - top * ny) / nx;
-            if (x >= left && x <= right) {
-                if (Double.isNaN(x1)) {
-                    x1 = x;
-                    y1 = top;
-                } else if (Double.isNaN(x2)) {
-                    x2 = x;
-                    y2 = top;
-                }
-            }
+            addPoint(
+                    points,
+                    (rho - top * ny) / nx,
+                    top,
+                    left, top, right, bottom
+            );
 
-            x = (rho - bottom * ny) / nx;
-            if (x >= left && x <= right) {
-                if (Double.isNaN(x1)) {
-                    x1 = x;
-                    y1 = bottom;
-                } else if (Double.isNaN(x2)) {
-                    x2 = x;
-                    y2 = bottom;
+            addPoint(
+                    points,
+                    (rho - bottom * ny) / nx,
+                    bottom,
+                    left, top, right, bottom
+            );
+        }
+
+        if (points.size() < 2) {
+            return null;
+        }
+
+        float[] first = null;
+        float[] second = null;
+
+        double maxDistance = 0;
+
+        for (int i = 0; i < points.size(); i++) {
+
+            for (int j = i + 1; j < points.size(); j++) {
+
+                float[] p1 = points.get(i);
+                float[] p2 = points.get(j);
+
+                double dx = p1[0] - p2[0];
+                double dy = p1[1] - p2[1];
+
+                double distance = dx * dx + dy * dy;
+
+                if (distance > maxDistance) {
+
+                    maxDistance = distance;
+
+                    first = p1;
+                    second = p2;
                 }
             }
         }
 
-        if (Double.isNaN(x1) || Double.isNaN(x2)) {
-            sendLine(null, width, height);
+        if (first == null || second == null) {
+            return null;
+        }
+
+        return new float[] {
+                first[0], first[1],
+                second[0], second[1]
+        };
+    }
+
+    private void addPoint(
+            List<float[]> points,
+            double x,
+            double y,
+            int left,
+            int top,
+            int right,
+            int bottom) {
+
+        if (x < left || x > right || y < top || y > bottom) {
             return;
         }
 
-        float[] line = new float[] {
-                (float)(x1 * step),
-                (float)(y1 * step),
-                (float)(x2 * step),
-                (float)(y2 * step)
-        };
+        for (float[] point : points) {
 
-        sendLine(line, width, height);
+            if (Math.abs(point[0] - x) < 1
+                    && Math.abs(point[1] - y) < 1) {
+                return;
+            }
+        }
+
+        points.add(new float[] {
+                (float) x,
+                (float) y
+        });
     }
 
-    private void sendLine(float[] line, int width, int height) {
+    private void sendLines(
+            float[] lines,
+            int width,
+            int height) {
 
         Intent update = new Intent(ACTION_LINE);
+
         update.setPackage(getPackageName());
 
-        if (line != null) {
-            update.putExtra("line", line);
+        if (lines != null) {
+            update.putExtra("lines", lines);
         }
 
         update.putExtra("width", width);
@@ -364,6 +532,7 @@ public class AimCaptureService extends Service {
     private Notification buildNotification() {
 
         if (Build.VERSION.SDK_INT >= 26) {
+
             return new Notification.Builder(this, CHANNEL_ID)
                     .setContentTitle("Saqib Pool Pro")
                     .setContentText("Aim detection is running")
@@ -402,6 +571,7 @@ public class AimCaptureService extends Service {
         }
 
         stopForeground(true);
+
         super.onDestroy();
     }
 
@@ -409,4 +579,5 @@ public class AimCaptureService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-            }
+    }
+            
