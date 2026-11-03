@@ -32,9 +32,7 @@ public class AimOverlayService extends Service {
             return;
         }
 
-        windowManager =
-                (WindowManager)getSystemService(WINDOW_SERVICE);
-
+        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         aimView = new AimView(this);
 
         WindowManager.LayoutParams params =
@@ -49,30 +47,33 @@ public class AimOverlayService extends Service {
                 );
 
         params.gravity = Gravity.TOP | Gravity.START;
-
         windowManager.addView(aimView, params);
 
         registerLineReceiver();
     }
 
     private void registerLineReceiver() {
-
         receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
 
-                if (!AimCaptureService.ACTION_LINE.equals(
-                        intent.getAction())) {
+                if (!AimCaptureService.ACTION_LINE.equals(intent.getAction())) {
                     return;
                 }
 
-                float[] line = intent.getFloatArrayExtra("line");
+                // New format: 8 values = 2 lines
+                float[] lines = intent.getFloatArrayExtra("lines");
+
+                // Old format: 4 values = 1 line
+                if (lines == null) {
+                    lines = intent.getFloatArrayExtra("line");
+                }
 
                 int width = intent.getIntExtra("width", 0);
                 int height = intent.getIntExtra("height", 0);
 
                 if (aimView != null) {
-                    aimView.setLine(line, width, height);
+                    aimView.setLines(lines, width, height);
                 }
             }
         };
@@ -81,11 +82,7 @@ public class AimOverlayService extends Service {
                 new IntentFilter(AimCaptureService.ACTION_LINE);
 
         if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(
-                    receiver,
-                    filter,
-                    Context.RECEIVER_NOT_EXPORTED
-            );
+            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
             registerReceiver(receiver, filter);
         }
@@ -93,11 +90,9 @@ public class AimOverlayService extends Service {
 
     private class AimView extends View {
 
-        private final Paint linePaint = new Paint(
-                Paint.ANTI_ALIAS_FLAG
-        );
+        private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-        private float[] line;
+        private float[] lines;
         private int sourceWidth = 1;
         private int sourceHeight = 1;
 
@@ -108,19 +103,17 @@ public class AimOverlayService extends Service {
 
             linePaint.setColor(Color.CYAN);
             linePaint.setStrokeWidth(
-                    2.5f * getResources()
-                            .getDisplayMetrics().density
+                    2.5f * getResources().getDisplayMetrics().density
             );
             linePaint.setStrokeCap(Paint.Cap.ROUND);
             linePaint.setStyle(Paint.Style.STROKE);
         }
 
-        void setLine(float[] points, int width, int height) {
-
+        void setLines(float[] points, int width, int height) {
             if (points == null || points.length < 4) {
-                line = null;
+                lines = null;
             } else {
-                line = points.clone();
+                lines = points.clone();
             }
 
             if (width > 0) sourceWidth = width;
@@ -133,24 +126,35 @@ public class AimOverlayService extends Service {
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
 
-            if (line == null || line.length < 4) return;
+            if (lines == null || lines.length < 4) return;
 
-            float sx = getWidth() / (float)sourceWidth;
-            float sy = getHeight() / (float)sourceHeight;
+            float sx = getWidth() / (float) sourceWidth;
+            float sy = getHeight() / (float) sourceHeight;
 
+            // First guide line
             canvas.drawLine(
-                    line[0] * sx,
-                    line[1] * sy,
-                    line[2] * sx,
-                    line[3] * sy,
+                    lines[0] * sx,
+                    lines[1] * sy,
+                    lines[2] * sx,
+                    lines[3] * sy,
                     linePaint
             );
+
+            // Second guide line, if available
+            if (lines.length >= 8) {
+                canvas.drawLine(
+                        lines[4] * sx,
+                        lines[5] * sy,
+                        lines[6] * sx,
+                        lines[7] * sy,
+                        linePaint
+                );
+            }
         }
     }
 
     @Override
     public void onDestroy() {
-
         if (receiver != null) {
             try {
                 unregisterReceiver(receiver);
@@ -171,8 +175,7 @@ public class AimOverlayService extends Service {
     }
 
     @Override
-    public int onStartCommand(
-            Intent intent, int flags, int startId) {
+    public int onStartCommand(Intent intent, int flags, int startId) {
         return START_NOT_STICKY;
     }
 
@@ -180,4 +183,4 @@ public class AimOverlayService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-                }
+    }
