@@ -7,8 +7,6 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
-import android.content.ContentValues;
-import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
@@ -20,10 +18,8 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
-import android.provider.MediaStore;
 import android.util.DisplayMetrics;
 
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
 
 public class AimCaptureService extends Service {
@@ -31,29 +27,45 @@ public class AimCaptureService extends Service {
     public static final String EXTRA_RESULT_CODE = "resultCode";
     public static final String EXTRA_DATA = "projectionData";
 
-    public static final String ACTION_BALL =
-            "com.saqib.poolpro.BALL_POSITION";
-
     public static final String ACTION_AIM =
             "com.saqib.poolpro.AIM_DIRECTION";
 
     private static final String CHANNEL_ID = "pool_capture";
-    private static final int NOTIFICATION_ID = 7;
 
     private MediaProjection projection;
     private VirtualDisplay virtualDisplay;
     private ImageReader imageReader;
-    private HandlerThread workerThread;
-    private Handler worker;
+    private HandlerThread thread;
+    private Handler handler;
 
-    private long lastFrameTime = 0;
-    private boolean debugFrameSaved = false;
+    private long lastFrame;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        createNotificationChannel();
-        startForeground(NOTIFICATION_ID, buildNotification());
+
+        if (Build.VERSION.SDK_INT >= 26) {
+            NotificationChannel channel = new NotificationChannel(
+                    CHANNEL_ID,
+                    "Pool capture",
+                    NotificationManager.IMPORTANCE_LOW
+            );
+
+            getSystemService(NotificationManager.class)
+                    .createNotificationChannel(channel);
+
+            startForeground(7, new Notification.Builder(this, CHANNEL_ID)
+                    .setContentTitle("Saqib Pool Pro")
+                    .setContentText("Aim guide detection running")
+                    .setSmallIcon(android.R.drawable.ic_menu_search)
+                    .build());
+        } else {
+            startForeground(7, new Notification.Builder(this)
+                    .setContentTitle("Saqib Pool Pro")
+                    .setContentText("Aim guide detection running")
+                    .setSmallIcon(android.R.drawable.ic_menu_search)
+                    .build());
+        }
     }
 
     @Override
@@ -100,41 +112,39 @@ public class AimCaptureService extends Service {
 
             int width = metrics.widthPixels;
             int height = metrics.heightPixels;
-            int density = metrics.densityDpi;
 
-            workerThread = new HandlerThread("PoolBallDetector");
-            workerThread.start();
-            worker = new Handler(workerThread.getLooper());
+            thread = new HandlerThread("PoolAimDetector");
+            thread.start();
+            handler = new Handler(thread.getLooper());
 
             imageReader = ImageReader.newInstance(
-                    width, height, PixelFormat.RGBA_8888, 2
+                    width,
+                    height,
+                    PixelFormat.RGBA_8888,
+                    2
             );
 
             imageReader.setOnImageAvailableListener(reader -> {
-
                 Image image = null;
 
                 try {
                     image = reader.acquireLatestImage();
+
                     if (image == null) return;
 
                     long now = System.currentTimeMillis();
-                    if (now - lastFrameTime < 120) return;
-                    lastFrameTime = now;
 
-                    if (!debugFrameSaved) {
-                        saveDebugFrame(image);
-                    }
+                    if (now - lastFrame < 100) return;
+                    lastFrame = now;
 
-                    detectBallAndAim(image);
+                    detectGuide(image);
 
                 } catch (Exception e) {
-                    android.util.Log.e("PoolPro", "Frame error", e);
+                    android.util.Log.e("PoolPro", "Detection error", e);
                 } finally {
                     if (image != null) image.close();
                 }
-
-            }, worker);
+            }, handler);
 
             projection.registerCallback(
                     new MediaProjection.Callback() {
@@ -143,405 +153,209 @@ public class AimCaptureService extends Service {
                             stopSelf();
                         }
                     },
-                    worker
+                    handler
             );
 
             virtualDisplay = projection.createVirtualDisplay(
-                    "SaqibPoolProCapture",
+                    "PoolAimCapture",
                     width,
                     height,
-                    density,
+                    metrics.densityDpi,
                     DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                     imageReader.getSurface(),
                     null,
-                    worker
+                    handler
             );
 
         } catch (Exception e) {
-            android.util.Log.e("PoolPro", "Capture start failed", e);
+            android.util.Log.e("PoolPro", "Start failed", e);
             stopSelf();
         }
 
         return START_NOT_STICKY;
     }
 
-    private void saveDebugFrame(Image image) {
+    private boolean isGuideWhite(
+            ByteBuffer buffer,
+            int rowStride,
+            int pixelStride,
+            int x,
+            int y,
+            int width,
+            int height) {
 
-        if (Build.VERSION.SDK_INT < 29) {
-            debugFrameSaved = true;
-            return;
+        if (x < 0 || y < 0 || x >= width || y >= height) {
+            return false;
         }
 
-        Bitmap bitmap = null;
+        int pos = y * rowStride + x * pixelStride;
 
-        try {
-            Image.Plane[] planes = image.getPlanes();
-            if (planes.length == 0) return;
+        if (pos + 2 >= buffer.limit()) return false;
 
-            ByteBuffer buffer = planes[0].getBuffer().duplicate();
+        int r = buffer.get(pos) & 255;
+        int g = buffer.get(pos + 1) & 255;
+        int b = buffer.get(pos + 2) & 255;
 
-            int width = image.getWidth();
-            int height = image.getHeight();
-            int rowStride = planes[0].getRowStride();
-            int pixelStride = planes[0].getPixelStride();
+        int max = Math.max(r, Math.max(g, b));
+        int min = Math.min(r, Math.min(g, b));
 
-            int[] pixels = new int[width * height];
-
-            for (int y = 0; y < height; y++) {
-                for (int x = 0; x < width; x++) {
-
-                    int pos = y * rowStride + x * pixelStride;
-                    if (pos + 3 >= buffer.limit()) continue;
-
-                    int r = buffer.get(pos) & 255;
-                    int g = buffer.get(pos + 1) & 255;
-                    int b = buffer.get(pos + 2) & 255;
-                    int a = buffer.get(pos + 3) & 255;
-
-                    pixels[y * width + x] =
-                            (a << 24) | (r << 16) | (g << 8) | b;
-                }
-            }
-
-            bitmap = Bitmap.createBitmap(
-                    width, height, Bitmap.Config.ARGB_8888
-            );
-
-            bitmap.setPixels(pixels, 0, width, 0, 0, width, height);
-
-            ContentValues values = new ContentValues();
-            values.put(
-                    MediaStore.Images.Media.DISPLAY_NAME,
-                    "PoolPro_Debug_Frame.png"
-            );
-            values.put(
-                    MediaStore.Images.Media.MIME_TYPE,
-                    "image/png"
-            );
-            values.put(
-                    MediaStore.Images.Media.RELATIVE_PATH,
-                    "Pictures/SaqibPoolPro"
-            );
-
-            android.net.Uri uri = getContentResolver().insert(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    values
-            );
-
-            if (uri == null) throw new Exception("Gallery insert failed");
-
-            try (OutputStream out =
-                         getContentResolver().openOutputStream(uri)) {
-                if (out == null || !bitmap.compress(
-                        Bitmap.CompressFormat.PNG, 100, out
-                )) {
-                    throw new Exception("Image write failed");
-                }
-            }
-
-            debugFrameSaved = true;
-
-        } catch (Exception e) {
-            android.util.Log.e("PoolPro", "Debug save failed", e);
-        } finally {
-            if (bitmap != null) bitmap.recycle();
-        }
+        return r > 175 && g > 175 && b > 165
+                && max - min < 65;
     }
 
-    private void detectBallAndAim(Image image) {
+    private void detectGuide(Image image) {
 
         Image.Plane[] planes = image.getPlanes();
         if (planes.length == 0) return;
 
         ByteBuffer buffer = planes[0].getBuffer().duplicate();
 
-        int rowStride = planes[0].getRowStride();
-        int pixelStride = planes[0].getPixelStride();
-
         int width = image.getWidth();
         int height = image.getHeight();
 
-        final int step = 2;
+        int rowStride = planes[0].getRowStride();
+        int pixelStride = planes[0].getPixelStride();
 
-        int gw = (width + step - 1) / step;
-        int gh = (height + step - 1) / step;
+        /*
+         * White circular candidates are searched.
+         * The candidate must also have a long white guide
+         * extending away from it.
+         */
 
-        boolean[] white = new boolean[gw * gh];
+        int step = 2;
 
-        int gx1 = (int)(width * 0.18f) / step;
-        int gx2 = Math.min(gw - 1, (int)(width * 0.83f) / step);
-        int gy1 = (int)(height * 0.20f) / step;
-        int gy2 = Math.min(gh - 1, (int)(height * 0.94f) / step);
+        int bestBallX = -1;
+        int bestBallY = -1;
+        double bestLineScore = 0;
+        double bestAngle = 0;
 
-        for (int gy = gy1; gy <= gy2; gy++) {
-            int y = gy * step;
+        int minDim = Math.min(width, height);
+        int expectedRadius = Math.max(8, Math.round(minDim * 0.020f));
 
-            for (int gx = gx1; gx <= gx2; gx++) {
-                int x = gx * step;
-                int pos = y * rowStride + x * pixelStride;
+        for (int cy = expectedRadius + 5;
+             cy < height - expectedRadius - 5;
+             cy += 4) {
 
-                if (pos + 2 >= buffer.limit()) continue;
+            for (int cx = expectedRadius + 5;
+                 cx < width - expectedRadius - 5;
+                 cx += 4) {
 
-                int r = buffer.get(pos) & 255;
-                int g = buffer.get(pos + 1) & 255;
-                int b = buffer.get(pos + 2) & 255;
+                int whiteCount = 0;
+                int total = 0;
 
-                int max = Math.max(r, Math.max(g, b));
-                int min = Math.min(r, Math.min(g, b));
+                for (int yy = -expectedRadius;
+                     yy <= expectedRadius;
+                     yy += step) {
 
-                white[gy * gw + gx] =
-                        r >= 185 && g >= 180 && b >= 165 &&
-                        max - min <= 65;
-            }
-        }
+                    for (int xx = -expectedRadius;
+                         xx <= expectedRadius;
+                         xx += step) {
 
-        boolean[] visited = new boolean[gw * gh];
-        int[] queue = new int[gw * gh];
-
-        int bestX = -1;
-        int bestY = -1;
-        double bestScore = -999999;
-
-        for (int gy = gy1; gy <= gy2; gy++) {
-            for (int gx = gx1; gx <= gx2; gx++) {
-
-                int start = gy * gw + gx;
-                if (!white[start] || visited[start]) continue;
-
-                int head = 0;
-                int tail = 0;
-
-                queue[tail++] = start;
-                visited[start] = true;
-
-                int count = 0;
-                int left = gx, right = gx, top = gy, bottom = gy;
-                long sumX = 0, sumY = 0;
-
-                while (head < tail) {
-                    int index = queue[head++];
-                    int cx = index % gw;
-                    int cy = index / gw;
-
-                    count++;
-                    sumX += cx;
-                    sumY += cy;
-
-                    left = Math.min(left, cx);
-                    right = Math.max(right, cx);
-                    top = Math.min(top, cy);
-                    bottom = Math.max(bottom, cy);
-
-                    int[] neighbors = {
-                            index - 1, index + 1,
-                            index - gw, index + gw
-                    };
-
-                    for (int n : neighbors) {
-                        if (n < 0 || n >= white.length) continue;
-
-                        int nx = n % gw;
-                        int ny = n / gw;
-
-                        if (Math.abs(nx - cx) + Math.abs(ny - cy) != 1)
+                        if (xx * xx + yy * yy >
+                                expectedRadius * expectedRadius) {
                             continue;
+                        }
 
-                        if (nx < gx1 || nx > gx2 ||
-                                ny < gy1 || ny > gy2)
-                            continue;
+                        total++;
 
-                        if (white[n] && !visited[n]) {
-                            visited[n] = true;
-                            queue[tail++] = n;
+                        if (isGuideWhite(
+                                buffer, rowStride, pixelStride,
+                                cx + xx, cy + yy, width, height)) {
+                            whiteCount++;
                         }
                     }
                 }
 
-                int boxW = right - left + 1;
-                int boxH = bottom - top + 1;
+                if (total == 0) continue;
 
-                float expected = width * 0.020f;
-                float diameter = (boxW + boxH) * step / 2f;
-                float ratio = boxW / (float)Math.max(1, boxH);
-                float fill = count / (float)Math.max(1, boxW * boxH);
+                float whiteRatio = whiteCount / (float) total;
 
-                if (boxW < 4 || boxH < 4) continue;
-                if (ratio < 0.65f || ratio > 1.35f) continue;
-                if (fill < 0.30f) continue;
-                if (diameter < expected * 0.55f ||
-                        diameter > expected * 1.65f) continue;
+                // Plain white cue ball should have a relatively
+                // high white-pixel ratio.
+                if (whiteRatio < 0.48f) continue;
 
-                float centerX = (sumX / (float)count) * step;
-                float centerY = (sumY / (float)count) * step;
+                for (int degree = 0; degree < 360; degree += 2) {
 
-                double sizeError =
-                        Math.abs(diameter - expected) / expected;
-                double shapeError = Math.abs(1f - ratio);
+                    double angle = Math.toRadians(degree);
 
-                double score = count * 0.01
-                        - sizeError * 12
-                        - shapeError * 8
-                        + fill * 5;
+                    double dx = Math.cos(angle);
+                    double dy = Math.sin(angle);
 
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestX = Math.round(centerX);
-                    bestY = Math.round(centerY);
-                }
-            }
-        }
+                    int hits = 0;
+                    int longest = 0;
+                    int run = 0;
 
-        if (bestX < 0 || bestY < 0) return;
+                    int start = expectedRadius + 5;
+                    int end = Math.min(minDim / 2, 650);
 
-        Intent ballUpdate = new Intent(ACTION_BALL);
-        ballUpdate.setPackage(getPackageName());
-        ballUpdate.putExtra("x", (float)bestX);
-        ballUpdate.putExtra("y", (float)bestY);
-        ballUpdate.putExtra("width", width);
-        ballUpdate.putExtra("height", height);
-        sendBroadcast(ballUpdate);
+                    for (int d = start; d < end; d += 3) {
 
-        detectAimDirection(
-                buffer, rowStride, pixelStride,
-                width, height, bestX, bestY
-        );
-    }
+                        int px = (int) Math.round(cx + dx * d);
+                        int py = (int) Math.round(cy + dy * d);
 
-    /*
-     * Experimental detector:
-     * Cue ball ke qareeb se bahar ki taraf 360 angles check karta hai.
-     * Bright neutral pixels ki line-like grouping ko score karta hai.
-     */
-    private void detectAimDirection(
-            ByteBuffer buffer,
-            int rowStride,
-            int pixelStride,
-            int width,
-            int height,
-            int ballX,
-            int ballY) {
+                        if (px < 0 || py < 0 ||
+                                px >= width || py >= height) {
+                            break;
+                        }
 
-        float ballRadius = width * 0.020f;
-        float startDistance = ballRadius * 1.35f;
-        float maxDistance = Math.min(
-                Math.max(width, height) * 0.48f,
-                650f
-        );
+                        boolean hit = false;
 
-        double bestScore = 0;
-        double bestAngle = 0;
+                        // Search across a narrow strip around the ray.
+                        for (int offset = -2; offset <= 2; offset++) {
 
-        for (int degrees = 0; degrees < 360; degrees++) {
+                            int sx = (int) Math.round(px - dy * offset);
+                            int sy = (int) Math.round(py + dx * offset);
 
-            double angle = Math.toRadians(degrees);
-            double dx = Math.cos(angle);
-            double dy = Math.sin(angle);
+                            if (isGuideWhite(
+                                    buffer, rowStride, pixelStride,
+                                    sx, sy, width, height)) {
+                                hit = true;
+                                break;
+                            }
+                        }
 
-            int hits = 0;
-            int run = 0;
-            int longestRun = 0;
+                        if (hit) {
+                            hits++;
+                            run++;
+                            longest = Math.max(longest, run);
+                        } else {
+                            run = 0;
+                        }
+                    }
 
-            for (float d = startDistance;
-                 d <= maxDistance;
-                 d += 4f) {
+                    double score = hits + longest * 2.0;
 
-                int x = Math.round(ballX + (float)(dx * d));
-                int y = Math.round(ballY + (float)(dy * d));
-
-                if (x < 1 || y < 1 ||
-                        x >= width - 1 || y >= height - 1) {
-                    break;
-                }
-
-                boolean bright = false;
-
-                for (int offset = -2; offset <= 2; offset++) {
-                    int sx = Math.round(x - (float)(dy * offset));
-                    int sy = Math.round(y + (float)(dx * offset));
-
-                    int pos = sy * rowStride + sx * pixelStride;
-                    if (pos + 2 >= buffer.limit()) continue;
-
-                    int r = buffer.get(pos) & 255;
-                    int g = buffer.get(pos + 1) & 255;
-                    int b = buffer.get(pos + 2) & 255;
-
-                    int max = Math.max(r, Math.max(g, b));
-                    int min = Math.min(r, Math.min(g, b));
-
-                    if (r > 165 && g > 165 && b > 155 &&
-                            max - min < 75) {
-                        bright = true;
-                        break;
+                    if (score > bestLineScore) {
+                        bestLineScore = score;
+                        bestBallX = cx;
+                        bestBallY = cy;
+                        bestAngle = angle;
                     }
                 }
-
-                if (bright) {
-                    hits++;
-                    run++;
-                    longestRun = Math.max(longestRun, run);
-                } else {
-                    run = 0;
-                }
-            }
-
-            double score = hits + longestRun * 1.5;
-
-            if (score > bestScore) {
-                bestScore = score;
-                bestAngle = angle;
             }
         }
 
-        // Weak/random matches par line display nahi karni.
-        if (bestScore < 13) return;
-
-        Intent aimUpdate = new Intent(ACTION_AIM);
-        aimUpdate.setPackage(getPackageName());
-
-        aimUpdate.putExtra("x", (float)ballX);
-        aimUpdate.putExtra("y", (float)ballY);
-        aimUpdate.putExtra("angle", (float)bestAngle);
-        aimUpdate.putExtra("width", width);
-        aimUpdate.putExtra("height", height);
-        aimUpdate.putExtra("score", (float)bestScore);
-
-        sendBroadcast(aimUpdate);
-    }
-
-    private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel channel =
-                    new NotificationChannel(
-                            CHANNEL_ID,
-                            "Pool ball detection",
-                            NotificationManager.IMPORTANCE_LOW
-                    );
-
-            NotificationManager nm =
-                    getSystemService(NotificationManager.class);
-            nm.createNotificationChannel(channel);
-        }
-    }
-
-    private Notification buildNotification() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            return new Notification.Builder(this, CHANNEL_ID)
-                    .setContentTitle("Saqib Pool Pro")
-                    .setContentText("Ball and aim detection is running")
-                    .setSmallIcon(android.R.drawable.ic_menu_search)
-                    .build();
+        // Do not draw anything if the line match is weak.
+        if (bestBallX < 0 || bestLineScore < 16) {
+            return;
         }
 
-        return new Notification.Builder(this)
-                .setContentTitle("Saqib Pool Pro")
-                .setContentText("Ball and aim detection is running")
-                .setSmallIcon(android.R.drawable.ic_menu_search)
-                .build();
+        Intent update = new Intent(ACTION_AIM);
+        update.setPackage(getPackageName());
+
+        update.putExtra("x", (float) bestBallX);
+        update.putExtra("y", (float) bestBallY);
+        update.putExtra("angle", (float) bestAngle);
+        update.putExtra("width", width);
+        update.putExtra("height", height);
+        update.putExtra("score", (float) bestLineScore);
+
+        sendBroadcast(update);
     }
 
     @Override
     public void onDestroy() {
+
         if (virtualDisplay != null) {
             virtualDisplay.release();
             virtualDisplay = null;
@@ -557,9 +371,9 @@ public class AimCaptureService extends Service {
             projection = null;
         }
 
-        if (workerThread != null) {
-            workerThread.quitSafely();
-            workerThread = null;
+        if (thread != null) {
+            thread.quitSafely();
+            thread = null;
         }
 
         stopForeground(true);
@@ -570,4 +384,5 @@ public class AimCaptureService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-}
+        }
+                    
