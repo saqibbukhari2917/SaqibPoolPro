@@ -5,8 +5,10 @@ import android.app.Service;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
@@ -15,15 +17,18 @@ import android.media.ImageReader;
 import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
+import android.provider.MediaStore;
 import android.util.DisplayMetrics;
 import android.util.Log;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
 
 public class AimCaptureService extends Service {
 
@@ -42,6 +47,11 @@ public class AimCaptureService extends Service {
     private Handler worker;
 
     private long lastFrameTime = 0;
+    private long lastSaveTime = 0;
+    private int savedFrames = 0;
+
+    private static final int MAX_SAVED_FRAMES = 3;
+    private static final long SAVE_INTERVAL = 8000;
 
     @Override
     public void onCreate() {
@@ -58,8 +68,8 @@ public class AimCaptureService extends Service {
         }
 
         int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
-        Intent data;
 
+        Intent data;
         if (Build.VERSION.SDK_INT >= 33) {
             data = intent.getParcelableExtra(EXTRA_DATA, Intent.class);
         } else {
@@ -94,7 +104,7 @@ public class AimCaptureService extends Service {
             int width = metrics.widthPixels;
             int height = metrics.heightPixels;
 
-            workerThread = new HandlerThread("PoolAimDetector");
+            workerThread = new HandlerThread("PoolFrameSaver");
             workerThread.start();
             worker = new Handler(workerThread.getLooper());
 
@@ -102,33 +112,51 @@ public class AimCaptureService extends Service {
                     width,
                     height,
                     PixelFormat.RGBA_8888,
-                    2
+                    3
             );
 
             imageReader.setOnImageAvailableListener(reader -> {
-
                 Image image = null;
 
                 try {
                     image = reader.acquireLatestImage();
-
                     if (image == null) return;
 
                     long now = System.currentTimeMillis();
 
-                    if (now - lastFrameTime < 180) return;
-
+                    if (now - lastFrameTime < 500) return;
                     lastFrameTime = now;
-                    detectAimLines(image);
+
+                    if (savedFrames < MAX_SAVED_FRAMES
+                            && now - lastSaveTime >= SAVE_INTERVAL) {
+
+                        boolean saved = saveFrame(image);
+
+                        if (saved) {
+                            savedFrames++;
+                            lastSaveTime = now;
+
+                            Log.i("PoolProFrame",
+                                    "Saved frame " + savedFrames
+                                            + " of " + MAX_SAVED_FRAMES);
+
+                            updateNotification(
+                                    "Game frames saved: " + savedFrames
+                                            + " of " + MAX_SAVED_FRAMES
+                            );
+                        }
+                    }
+
+                    // Diagnostic mode: do not draw unverified lines.
+                    sendLines(null, width, height);
 
                 } catch (Exception e) {
-                    Log.e("PoolPro", "Aim detection error", e);
+                    Log.e("PoolProFrame", "Frame processing error", e);
                 } finally {
                     if (image != null) {
                         image.close();
                     }
                 }
-
             }, worker);
 
             projection.registerCallback(
@@ -153,406 +181,147 @@ public class AimCaptureService extends Service {
             );
 
         } catch (Exception e) {
-            Log.e("PoolPro", "Capture start failed", e);
+            Log.e("PoolProFrame", "Capture start failed", e);
             stopSelf();
         }
 
         return START_NOT_STICKY;
     }
 
-    private void detectAimLines(Image image) {
+    private boolean saveFrame(Image image) {
 
-        int width = image.getWidth();
-        int height = image.getHeight();
+        Bitmap bitmap = null;
 
-        Image.Plane[] planes = image.getPlanes();
-        if (planes.length == 0) return;
+        try {
+            int width = image.getWidth();
+            int height = image.getHeight();
 
-        ByteBuffer buffer = planes[0].getBuffer().duplicate();
+            Image.Plane[] planes = image.getPlanes();
+            if (planes.length == 0) return false;
 
-        int rowStride = planes[0].getRowStride();
-        int pixelStride = planes[0].getPixelStride();
+            Image.Plane plane = planes[0];
+            ByteBuffer buffer = plane.getBuffer().duplicate();
 
-        final int step = 2;
+            int rowStride = plane.getRowStride();
+            int pixelStride = plane.getPixelStride();
 
-        int gw = width / step;
-        int gh = height / step;
+            int[] pixels = new int[width * height];
 
-        // Approximate game table area
-        int left = (int) (gw * 0.10f);
-        int right = (int) (gw * 0.90f);
-        int top = (int) (gh * 0.12f);
-        int bottom = (int) (gh * 0.92f);
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
 
-        final int angleCount = 180;
+                    int pos = y * rowStride + x * pixelStride;
 
-        int diagonal =
-                (int) Math.sqrt(gw * gw + gh * gh);
-
-        int rhoSize = diagonal * 2 + 1;
-
-        int[][] accumulator =
-                new int[angleCount][rhoSize];
-
-        double[] cos = new double[angleCount];
-        double[] sin = new double[angleCount];
-
-        for (int a = 0; a < angleCount; a++) {
-            double theta = Math.PI * a / angleCount;
-            cos[a] = Math.cos(theta);
-            sin[a] = Math.sin(theta);
-        }
-
-        ArrayList<int[]> whitePixels = new ArrayList<>();
-
-        // Find bright neutral pixels
-        for (int y = top; y < bottom; y++) {
-
-            for (int x = left; x < right; x++) {
-
-                int pos =
-                        (y * step) * rowStride
-                                + (x * step) * pixelStride;
-
-                if (pos < 0 || pos + 2 >= buffer.limit()) {
-                    continue;
-                }
-
-                int r = buffer.get(pos) & 255;
-                int g = buffer.get(pos + 1) & 255;
-                int b = buffer.get(pos + 2) & 255;
-
-                int max = Math.max(r, Math.max(g, b));
-                int min = Math.min(r, Math.min(g, b));
-
-                if (min < 190 || max - min > 42) {
-                    continue;
-                }
-
-                whitePixels.add(new int[]{x, y});
-
-                for (int a = 0; a < angleCount; a++) {
-
-                    int rho = (int) Math.round(
-                            x * cos[a] + y * sin[a]
-                    ) + diagonal;
-
-                    if (rho >= 0 && rho < rhoSize) {
-                        accumulator[a][rho]++;
+                    if (pos + 3 >= buffer.limit()) {
+                        continue;
                     }
-                }
-            }
-        }
 
-        if (whitePixels.size() < 40) {
-            sendLines(null, width, height);
-            return;
-        }
+                    int r = buffer.get(pos) & 255;
+                    int g = buffer.get(pos + 1) & 255;
+                    int b = buffer.get(pos + 2) & 255;
+                    int a = buffer.get(pos + 3) & 255;
 
-        ArrayList<float[]> acceptedLines = new ArrayList<>();
-
-        // Search for two separate, continuous line candidates
-        for (int attempt = 0;
-             attempt < 30 && acceptedLines.size() < 2;
-             attempt++) {
-
-            int bestA = -1;
-            int bestR = -1;
-            int bestVotes = 0;
-
-            for (int a = 0; a < angleCount; a++) {
-
-                for (int r = 0; r < rhoSize; r++) {
-
-                    int votes = accumulator[a][r];
-
-                    if (votes > bestVotes) {
-                        bestVotes = votes;
-                        bestA = a;
-                        bestR = r;
-                    }
+                    pixels[y * width + x] =
+                            (a << 24) | (r << 16) | (g << 8) | b;
                 }
             }
 
-            if (bestA < 0 || bestVotes < 18) {
-                break;
-            }
+            bitmap = Bitmap.createBitmap(
+                    pixels, width, height, Bitmap.Config.ARGB_8888
+            );
 
-            double nx = cos[bestA];
-            double ny = sin[bestA];
+            String fileName =
+                    "PoolFrame_" + System.currentTimeMillis() + ".jpg";
 
-            double rho = bestR - diagonal;
+            OutputStream output = null;
 
-            double dx = -ny;
-            double dy = nx;
+            if (Build.VERSION.SDK_INT >= 29) {
 
-            int[] bins = new int[20];
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.Images.Media.DISPLAY_NAME, fileName);
+                values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+                values.put(
+                        MediaStore.Images.Media.RELATIVE_PATH,
+                        Environment.DIRECTORY_PICTURES + "/SaqibPoolPro"
+                );
+                values.put(MediaStore.Images.Media.IS_PENDING, 1);
 
-            int inliers = 0;
-
-            double minT = Double.POSITIVE_INFINITY;
-            double maxT = Double.NEGATIVE_INFINITY;
-
-            for (int[] p : whitePixels) {
-
-                double distance = Math.abs(
-                        p[0] * nx + p[1] * ny - rho
+                android.net.Uri uri = getContentResolver().insert(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        values
                 );
 
-                if (distance > 1.8) continue;
+                if (uri == null) return false;
 
-                double t = p[0] * dx + p[1] * dy;
+                output = getContentResolver().openOutputStream(uri);
 
-                minT = Math.min(minT, t);
-                maxT = Math.max(maxT, t);
-
-                inliers++;
-            }
-
-            if (inliers > 0 && maxT > minT) {
-
-                double span = maxT - minT;
-
-                for (int[] p : whitePixels) {
-
-                    double distance = Math.abs(
-                            p[0] * nx + p[1] * ny - rho
-                    );
-
-                    if (distance > 1.8) continue;
-
-                    double t = p[0] * dx + p[1] * dy;
-
-                    int bin = (int)
-                            ((t - minT) / span * 19.0);
-
-                    bin = Math.max(0, Math.min(19, bin));
-
-                    bins[bin]++;
+                if (output == null) {
+                    getContentResolver().delete(uri, null, null);
+                    return false;
                 }
-            }
 
-            int occupiedBins = 0;
+                boolean compressed = bitmap.compress(
+                        Bitmap.CompressFormat.JPEG, 92, output
+                );
 
-            for (int count : bins) {
-                if (count > 0) occupiedBins++;
-            }
+                output.flush();
+                output.close();
+                output = null;
 
-            float[] bounds = lineToBounds(
-                    bestA,
-                    bestR,
-                    diagonal,
-                    cos,
-                    sin,
-                    left,
-                    top,
-                    right,
-                    bottom
-            );
-
-            boolean longEnough =
-                    maxT - minT >= Math.min(gw, gh) * 0.18;
-
-            boolean continuous =
-                    occupiedBins >= 10 && inliers >= 24;
-
-            boolean distinct = true;
-
-            if (bounds != null) {
-
-                for (float[] prior : acceptedLines) {
-
-                    double angleDifference =
-                            Math.abs(bestA - prior[4]);
-
-                    angleDifference =
-                            Math.min(
-                                    angleDifference,
-                                    180 - angleDifference
-                            );
-
-                    if (angleDifference < 7
-                            && Math.abs(rho - prior[5]) < 14) {
-
-                        distinct = false;
-                        break;
-                    }
+                if (!compressed) {
+                    getContentResolver().delete(uri, null, null);
+                    return false;
                 }
-            }
 
-            if (bounds != null
-                    && longEnough
-                    && continuous
-                    && distinct) {
+                ContentValues ready = new ContentValues();
+                ready.put(MediaStore.Images.Media.IS_PENDING, 0);
+                getContentResolver().update(uri, ready, null, null);
 
-                acceptedLines.add(new float[]{
-                        bounds[0],
-                        bounds[1],
-                        bounds[2],
-                        bounds[3],
-                        bestA,
-                        (float) rho
-                });
-            }
+                Log.i("PoolProFrame", "Image saved: " + uri);
+                return true;
 
-            // Remove this peak and nearby duplicate peaks
-            for (int a = Math.max(0, bestA - 5);
-                 a <= Math.min(179, bestA + 5);
-                 a++) {
+            } else {
 
-                for (int r = Math.max(0, bestR - 10);
-                     r <= Math.min(rhoSize - 1, bestR + 10);
-                     r++) {
+                File folder = new File(
+                        getExternalFilesDir(Environment.DIRECTORY_PICTURES),
+                        "SaqibPoolPro"
+                );
 
-                    accumulator[a][r] = 0;
+                if (!folder.exists() && !folder.mkdirs()) {
+                    return false;
                 }
+
+                File file = new File(folder, fileName);
+                output = new FileOutputStream(file);
+
+                boolean compressed = bitmap.compress(
+                        Bitmap.CompressFormat.JPEG, 92, output
+                );
+
+                output.flush();
+                output.close();
+                output = null;
+
+                Log.i("PoolProFrame",
+                        "Image saved: " + file.getAbsolutePath());
+
+                return compressed;
+            }
+
+        } catch (Exception e) {
+            Log.e("PoolProFrame", "Image save failed", e);
+            return false;
+
+        } finally {
+            if (bitmap != null) {
+                bitmap.recycle();
             }
         }
-
-        // Never draw random lines when two candidates are not found
-        if (acceptedLines.size() != 2) {
-            sendLines(null, width, height);
-            return;
-        }
-
-        float[] result = new float[]{
-                acceptedLines.get(0)[0] * step,
-                acceptedLines.get(0)[1] * step,
-                acceptedLines.get(0)[2] * step,
-                acceptedLines.get(0)[3] * step,
-
-                acceptedLines.get(1)[0] * step,
-                acceptedLines.get(1)[1] * step,
-                acceptedLines.get(1)[2] * step,
-                acceptedLines.get(1)[3] * step
-        };
-
-        sendLines(result, width, height);
     }
 
-    private float[] lineToBounds(
-            int angle,
-            int rhoIndex,
-            int diagonal,
-            double[] cos,
-            double[] sin,
-            int left,
-            int top,
-            int right,
-            int bottom) {
-
-        double nx = cos[angle];
-        double ny = sin[angle];
-
-        double rho = rhoIndex - diagonal;
-
-        List<float[]> points = new ArrayList<>();
-
-        if (Math.abs(ny) > 0.0001) {
-
-            addPoint(
-                    points,
-                    left,
-                    (rho - left * nx) / ny,
-                    left, top, right, bottom
-            );
-
-            addPoint(
-                    points,
-                    right,
-                    (rho - right * nx) / ny,
-                    left, top, right, bottom
-            );
-        }
-
-        if (Math.abs(nx) > 0.0001) {
-
-            addPoint(
-                    points,
-                    (rho - top * ny) / nx,
-                    top,
-                    left, top, right, bottom
-            );
-
-            addPoint(
-                    points,
-                    (rho - bottom * ny) / nx,
-                    bottom,
-                    left, top, right, bottom
-            );
-        }
-
-        if (points.size() < 2) return null;
-
-        float[] first = null;
-        float[] second = null;
-
-        double maxDistance = 0;
-
-        for (int i = 0; i < points.size(); i++) {
-
-            for (int j = i + 1; j < points.size(); j++) {
-
-                float[] p1 = points.get(i);
-                float[] p2 = points.get(j);
-
-                double dx = p1[0] - p2[0];
-                double dy = p1[1] - p2[1];
-
-                double distance = dx * dx + dy * dy;
-
-                if (distance > maxDistance) {
-
-                    maxDistance = distance;
-
-                    first = p1;
-                    second = p2;
-                }
-            }
-        }
-
-        if (first == null || second == null) return null;
-
-        return new float[]{
-                first[0], first[1],
-                second[0], second[1]
-        };
-    }
-
-    private void addPoint(
-            List<float[]> points,
-            double x,
-            double y,
-            int left,
-            int top,
-            int right,
-            int bottom) {
-
-        if (x < left || x > right || y < top || y > bottom) {
-            return;
-        }
-
-        for (float[] point : points) {
-
-            if (Math.abs(point[0] - x) < 1
-                    && Math.abs(point[1] - y) < 1) {
-                return;
-            }
-        }
-
-        points.add(new float[]{
-                (float) x,
-                (float) y
-        });
-    }
-
-    private void sendLines(
-            float[] lines,
-            int width,
-            int height) {
+    private void sendLines(float[] lines, int width, int height) {
 
         Intent update = new Intent(ACTION_LINE);
-
         update.setPackage(getPackageName());
 
         if (lines != null) {
@@ -565,16 +334,24 @@ public class AimCaptureService extends Service {
         sendBroadcast(update);
     }
 
+    private void updateNotification(String message) {
+
+        NotificationManager nm =
+                (NotificationManager)
+                        getSystemService(Context.NOTIFICATION_SERVICE);
+
+        nm.notify(NOTIFICATION_ID, buildNotification(message));
+    }
+
     private void createNotificationChannel() {
 
         if (Build.VERSION.SDK_INT >= 26) {
 
-            NotificationChannel channel =
-                    new NotificationChannel(
-                            CHANNEL_ID,
-                            "Pool aim detection",
-                            NotificationManager.IMPORTANCE_LOW
-                    );
+            NotificationChannel channel = new NotificationChannel(
+                    CHANNEL_ID,
+                    "Pool frame capture",
+                    NotificationManager.IMPORTANCE_LOW
+            );
 
             NotificationManager nm =
                     getSystemService(NotificationManager.class);
@@ -584,20 +361,23 @@ public class AimCaptureService extends Service {
     }
 
     private Notification buildNotification() {
+        return buildNotification("Live frame capture is running");
+    }
+
+    private Notification buildNotification(String message) {
 
         if (Build.VERSION.SDK_INT >= 26) {
-
             return new Notification.Builder(this, CHANNEL_ID)
                     .setContentTitle("Saqib Pool Pro")
-                    .setContentText("Aim detection is running")
-                    .setSmallIcon(android.R.drawable.ic_menu_search)
+                    .setContentText(message)
+                    .setSmallIcon(android.R.drawable.ic_menu_camera)
                     .build();
         }
 
         return new Notification.Builder(this)
                 .setContentTitle("Saqib Pool Pro")
-                .setContentText("Aim detection is running")
-                .setSmallIcon(android.R.drawable.ic_menu_search)
+                .setContentText(message)
+                .setSmallIcon(android.R.drawable.ic_menu_camera)
                 .build();
     }
 
@@ -632,4 +412,4 @@ public class AimCaptureService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-                    }
+        }
