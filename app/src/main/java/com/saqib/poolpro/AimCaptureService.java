@@ -26,7 +26,6 @@ public class AimCaptureService extends Service {
 
     public static final String EXTRA_RESULT_CODE = "resultCode";
     public static final String EXTRA_DATA = "projectionData";
-
     public static final String ACTION_AIM =
             "com.saqib.poolpro.AIM_DIRECTION";
 
@@ -39,6 +38,15 @@ public class AimCaptureService extends Service {
     private Handler handler;
 
     private long lastFrame;
+    private long lastBroadcast;
+
+    private int screenW;
+    private int screenH;
+
+    private int tableLeft;
+    private int tableTop;
+    private int tableRight;
+    private int tableBottom;
 
     @Override
     public void onCreate() {
@@ -56,13 +64,13 @@ public class AimCaptureService extends Service {
 
             startForeground(7, new Notification.Builder(this, CHANNEL_ID)
                     .setContentTitle("Saqib Pool Pro")
-                    .setContentText("Aim guide detection running")
+                    .setContentText("Original aim guide detection")
                     .setSmallIcon(android.R.drawable.ic_menu_search)
                     .build());
         } else {
             startForeground(7, new Notification.Builder(this)
                     .setContentTitle("Saqib Pool Pro")
-                    .setContentText("Aim guide detection running")
+                    .setContentText("Original aim guide detection")
                     .setSmallIcon(android.R.drawable.ic_menu_search)
                     .build());
         }
@@ -110,16 +118,16 @@ public class AimCaptureService extends Service {
 
             wm.getDefaultDisplay().getRealMetrics(metrics);
 
-            int width = metrics.widthPixels;
-            int height = metrics.heightPixels;
+            screenW = metrics.widthPixels;
+            screenH = metrics.heightPixels;
 
             thread = new HandlerThread("PoolAimDetector");
             thread.start();
             handler = new Handler(thread.getLooper());
 
             imageReader = ImageReader.newInstance(
-                    width,
-                    height,
+                    screenW,
+                    screenH,
                     PixelFormat.RGBA_8888,
                     2
             );
@@ -129,12 +137,10 @@ public class AimCaptureService extends Service {
 
                 try {
                     image = reader.acquireLatestImage();
-
                     if (image == null) return;
 
                     long now = System.currentTimeMillis();
-
-                    if (now - lastFrame < 100) return;
+                    if (now - lastFrame < 150) return;
                     lastFrame = now;
 
                     detectGuide(image);
@@ -158,8 +164,8 @@ public class AimCaptureService extends Service {
 
             virtualDisplay = projection.createVirtualDisplay(
                     "PoolAimCapture",
-                    width,
-                    height,
+                    screenW,
+                    screenH,
                     metrics.densityDpi,
                     DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                     imageReader.getSurface(),
@@ -168,39 +174,164 @@ public class AimCaptureService extends Service {
             );
 
         } catch (Exception e) {
-            android.util.Log.e("PoolPro", "Start failed", e);
+            android.util.Log.e("PoolPro", "Capture start failed", e);
             stopSelf();
         }
 
         return START_NOT_STICKY;
     }
 
-    private boolean isGuideWhite(
-            ByteBuffer buffer,
-            int rowStride,
-            int pixelStride,
+    private int pixel(
+            ByteBuffer b,
+            int row,
+            int stride,
             int x,
             int y,
-            int width,
-            int height) {
+            int w,
+            int h) {
 
-        if (x < 0 || y < 0 || x >= width || y >= height) {
-            return false;
+        if (x < 0 || y < 0 || x >= w || y >= h) return -1;
+
+        int p = y * row + x * stride;
+        if (p < 0 || p + 2 >= b.limit()) return -1;
+
+        int r = b.get(p) & 255;
+        int g = b.get(p + 1) & 255;
+        int bl = b.get(p + 2) & 255;
+
+        return (r << 16) | (g << 8) | bl;
+    }
+
+    private boolean white(
+            ByteBuffer b, int row, int stride,
+            int x, int y, int w, int h) {
+
+        int c = pixel(b, row, stride, x, y, w, h);
+        if (c < 0) return false;
+
+        int r = (c >> 16) & 255;
+        int g = (c >> 8) & 255;
+        int bl = c & 255;
+
+        return r > 185 && g > 185 && bl > 175
+                && Math.max(r, Math.max(g, bl))
+                - Math.min(r, Math.min(g, bl)) < 65;
+    }
+
+    private boolean dark(
+            ByteBuffer b, int row, int stride,
+            int x, int y, int w, int h) {
+
+        int c = pixel(b, row, stride, x, y, w, h);
+        if (c < 0) return false;
+
+        int r = (c >> 16) & 255;
+        int g = (c >> 8) & 255;
+        int bl = c & 255;
+
+        return r < 100 && g < 120 && bl < 145;
+    }
+
+    private void findTableBounds(
+            ByteBuffer b, int row, int stride, int w, int h) {
+
+        int left = w;
+        int right = 0;
+        int top = h;
+        int bottom = 0;
+
+        int xStart = (int) (w * 0.08f);
+        int xEnd = (int) (w * 0.92f);
+        int yStart = (int) (h * 0.08f);
+        int yEnd = (int) (h * 0.92f);
+
+        for (int y = yStart; y < yEnd; y += 5) {
+            for (int x = xStart; x < xEnd; x += 5) {
+
+                int c = pixel(b, row, stride, x, y, w, h);
+                if (c < 0) continue;
+
+                int r = (c >> 16) & 255;
+                int g = (c >> 8) & 255;
+                int bl = c & 255;
+
+                // Blue/turquoise table felt.
+                if (r < 115 && g > 105 && bl > 120
+                        && g > r * 1.25f) {
+
+                    left = Math.min(left, x);
+                    right = Math.max(right, x);
+                    top = Math.min(top, y);
+                    bottom = Math.max(bottom, y);
+                }
+            }
         }
 
-        int pos = y * rowStride + x * pixelStride;
+        if (right - left > w * 0.35f &&
+                bottom - top > h * 0.25f) {
 
-        if (pos + 2 >= buffer.limit()) return false;
+            tableLeft = left;
+            tableRight = right;
+            tableTop = top;
+            tableBottom = bottom;
+        }
+    }
 
-        int r = buffer.get(pos) & 255;
-        int g = buffer.get(pos + 1) & 255;
-        int b = buffer.get(pos + 2) & 255;
+    private double lineScore(
+            ByteBuffer b,
+            int row,
+            int stride,
+            int w,
+            int h,
+            int cx,
+            int cy,
+            double angle) {
 
-        int max = Math.max(r, Math.max(g, b));
-        int min = Math.min(r, Math.min(g, b));
+        double dx = Math.cos(angle);
+        double dy = Math.sin(angle);
 
-        return r > 175 && g > 175 && b > 165
-                && max - min < 65;
+        int hits = 0;
+        int pairs = 0;
+        int run = 0;
+        int longest = 0;
+
+        // The game guide has a dark center and bright edges.
+        for (int d = 24; d < 650; d += 4) {
+
+            int x = (int) Math.round(cx + dx * d);
+            int y = (int) Math.round(cy + dy * d);
+
+            if (x <= tableLeft || x >= tableRight ||
+                    y <= tableTop || y >= tableBottom) {
+                break;
+            }
+
+            int ox = (int) Math.round(-dy * 3);
+            int oy = (int) Math.round(dx * 3);
+
+            boolean centerDark = dark(
+                    b, row, stride, x, y, w, h
+            );
+
+            boolean edge1 = white(
+                    b, row, stride, x + ox, y + oy, w, h
+            );
+
+            boolean edge2 = white(
+                    b, row, stride, x - ox, y - oy, w, h
+            );
+
+            if (centerDark && (edge1 || edge2)) {
+                hits++;
+                run++;
+                pairs++;
+                longest = Math.max(longest, run);
+            } else {
+                run = 0;
+            }
+        }
+
+        return hits + longest * 1.5 + pairs * 0.5;
     }
 
     private void detectGuide(Image image) {
@@ -208,147 +339,104 @@ public class AimCaptureService extends Service {
         Image.Plane[] planes = image.getPlanes();
         if (planes.length == 0) return;
 
-        ByteBuffer buffer = planes[0].getBuffer().duplicate();
+        ByteBuffer b = planes[0].getBuffer().duplicate();
 
-        int width = image.getWidth();
-        int height = image.getHeight();
+        int w = image.getWidth();
+        int h = image.getHeight();
 
-        int rowStride = planes[0].getRowStride();
-        int pixelStride = planes[0].getPixelStride();
+        int row = planes[0].getRowStride();
+        int stride = planes[0].getPixelStride();
 
-        /*
-         * White circular candidates are searched.
-         * The candidate must also have a long white guide
-         * extending away from it.
-         */
+        findTableBounds(b, row, stride, w, h);
 
-        int step = 2;
+        if (tableRight <= tableLeft || tableBottom <= tableTop) {
+            return;
+        }
 
-        int bestBallX = -1;
-        int bestBallY = -1;
-        double bestLineScore = 0;
+        int step = 3;
+        int bestX = -1;
+        int bestY = -1;
         double bestAngle = 0;
+        double bestScore = 0;
 
-        int minDim = Math.min(width, height);
-        int expectedRadius = Math.max(8, Math.round(minDim * 0.020f));
+        int radius = Math.max(9, Math.round(Math.min(w, h) * 0.022f));
 
-        for (int cy = expectedRadius + 5;
-             cy < height - expectedRadius - 5;
-             cy += 4) {
+        // Search for a bright cue-ball-like circle only on the table.
+        for (int cy = tableTop + radius;
+             cy < tableBottom - radius;
+             cy += 5) {
 
-            for (int cx = expectedRadius + 5;
-                 cx < width - expectedRadius - 5;
-                 cx += 4) {
+            for (int cx = tableLeft + radius;
+                 cx < tableRight - radius;
+                 cx += 5) {
 
                 int whiteCount = 0;
-                int total = 0;
+                int count = 0;
 
-                for (int yy = -expectedRadius;
-                     yy <= expectedRadius;
-                     yy += step) {
+                for (int yy = -radius; yy <= radius; yy += step) {
+                    for (int xx = -radius; xx <= radius; xx += step) {
 
-                    for (int xx = -expectedRadius;
-                         xx <= expectedRadius;
-                         xx += step) {
-
-                        if (xx * xx + yy * yy >
-                                expectedRadius * expectedRadius) {
+                        if (xx * xx + yy * yy > radius * radius) {
                             continue;
                         }
 
-                        total++;
+                        count++;
 
-                        if (isGuideWhite(
-                                buffer, rowStride, pixelStride,
-                                cx + xx, cy + yy, width, height)) {
+                        if (white(b, row, stride,
+                                cx + xx, cy + yy, w, h)) {
                             whiteCount++;
                         }
                     }
                 }
 
-                if (total == 0) continue;
+                if (count == 0) continue;
 
-                float whiteRatio = whiteCount / (float) total;
+                float ratio = whiteCount / (float) count;
 
-                // Plain white cue ball should have a relatively
-                // high white-pixel ratio.
-                if (whiteRatio < 0.48f) continue;
+                if (ratio < 0.52f) continue;
 
-                for (int degree = 0; degree < 360; degree += 2) {
+                // Test each possible direction from the ball.
+                for (int deg = 0; deg < 360; deg += 3) {
 
-                    double angle = Math.toRadians(degree);
+                    double angle = Math.toRadians(deg);
 
-                    double dx = Math.cos(angle);
-                    double dy = Math.sin(angle);
+                    double score = lineScore(
+                            b, row, stride, w, h,
+                            cx, cy, angle
+                    );
 
-                    int hits = 0;
-                    int longest = 0;
-                    int run = 0;
-
-                    int start = expectedRadius + 5;
-                    int end = Math.min(minDim / 2, 650);
-
-                    for (int d = start; d < end; d += 3) {
-
-                        int px = (int) Math.round(cx + dx * d);
-                        int py = (int) Math.round(cy + dy * d);
-
-                        if (px < 0 || py < 0 ||
-                                px >= width || py >= height) {
-                            break;
-                        }
-
-                        boolean hit = false;
-
-                        // Search across a narrow strip around the ray.
-                        for (int offset = -2; offset <= 2; offset++) {
-
-                            int sx = (int) Math.round(px - dy * offset);
-                            int sy = (int) Math.round(py + dx * offset);
-
-                            if (isGuideWhite(
-                                    buffer, rowStride, pixelStride,
-                                    sx, sy, width, height)) {
-                                hit = true;
-                                break;
-                            }
-                        }
-
-                        if (hit) {
-                            hits++;
-                            run++;
-                            longest = Math.max(longest, run);
-                        } else {
-                            run = 0;
-                        }
-                    }
-
-                    double score = hits + longest * 2.0;
-
-                    if (score > bestLineScore) {
-                        bestLineScore = score;
-                        bestBallX = cx;
-                        bestBallY = cy;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestX = cx;
+                        bestY = cy;
                         bestAngle = angle;
                     }
                 }
             }
         }
 
-        // Do not draw anything if the line match is weak.
-        if (bestBallX < 0 || bestLineScore < 16) {
+        // Reject weak matches instead of drawing a random line.
+        if (bestX < 0 || bestScore < 22) {
             return;
         }
+
+        long now = System.currentTimeMillis();
+        if (now - lastBroadcast < 100) return;
+        lastBroadcast = now;
 
         Intent update = new Intent(ACTION_AIM);
         update.setPackage(getPackageName());
 
-        update.putExtra("x", (float) bestBallX);
-        update.putExtra("y", (float) bestBallY);
+        update.putExtra("x", (float) bestX);
+        update.putExtra("y", (float) bestY);
         update.putExtra("angle", (float) bestAngle);
-        update.putExtra("width", width);
-        update.putExtra("height", height);
-        update.putExtra("score", (float) bestLineScore);
+        update.putExtra("width", w);
+        update.putExtra("height", h);
+        update.putExtra("left", tableLeft);
+        update.putExtra("top", tableTop);
+        update.putExtra("right", tableRight);
+        update.putExtra("bottom", tableBottom);
+        update.putExtra("score", (float) bestScore);
 
         sendBroadcast(update);
     }
@@ -384,5 +472,4 @@ public class AimCaptureService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-        }
-                    
+            }
