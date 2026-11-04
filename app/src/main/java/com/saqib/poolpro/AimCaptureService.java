@@ -265,8 +265,11 @@ public class AimCaptureService extends Service {
                         imageHeight
                 );
 
-                // Diagnostic mode: no unverified overlay lines.
-                sendClear(imageWidth, imageHeight);
+                // Extend only the strongest long white guide from the cue-ball
+                // end to the estimated inner cushion boundary.
+                float[] extendedGuide = buildExtendedGuide(
+                        lines, points, imageWidth, imageHeight);
+                sendLines(extendedGuide, imageWidth, imageHeight);
 
                 if (now - lastNotificationTime >= 1500) {
                     lastNotificationTime = now;
@@ -647,16 +650,75 @@ public class AimCaptureService extends Service {
         return report.toString();
     }
 
-    private void sendClear(int width, int height) {
+    private int whitePointsNear(List<Point> points, float x, float y) {
+        int count = 0;
+        for (Point p : points) {
+            float dx = p.x - x;
+            float dy = p.y - y;
+            if (dx * dx + dy * dy <= 22f * 22f) count++;
+        }
+        return count;
+    }
 
+    private float[] buildExtendedGuide(
+            List<Line> lines, List<Point> points,
+            int width, int height) {
+
+        if (lines == null || lines.isEmpty()) return null;
+
+        // Ignore short fragments and select the strongest long candidate.
+        Line best = null;
+        for (Line line : lines) {
+            if (line.length() >= 180f &&
+                    (best == null || line.length() > best.length())) {
+                best = line;
+            }
+        }
+        if (best == null) return null;
+
+        // The filled white cue ball has a denser white neighbourhood than
+        // the hollow collision marker. Use that endpoint as the ray origin.
+        int density1 = whitePointsNear(points, best.x1, best.y1);
+        int density2 = whitePointsNear(points, best.x2, best.y2);
+
+        float cueX, cueY, targetX, targetY;
+        if (density1 >= density2) {
+            cueX = best.x1; cueY = best.y1;
+            targetX = best.x2; targetY = best.y2;
+        } else {
+            cueX = best.x2; cueY = best.y2;
+            targetX = best.x1; targetY = best.y1;
+        }
+
+        float dx = targetX - cueX;
+        float dy = targetY - cueY;
+
+        // Inner playing surface proportions for the landscape 8 Ball Pool table.
+        float left = width * 0.195f;
+        float right = width * 0.805f;
+        float top = height * 0.237f;
+        float bottom = height * 0.914f;
+
+        float[] ray = TableGeometry.extendRay(
+                cueX, cueY, dx, dy,
+                left, top, right, bottom);
+
+        if (ray == null) return null;
+
+        return ray;
+    }
+
+    private void sendLines(float[] lines, int width, int height) {
         Intent update = new Intent(ACTION_LINE);
-
         update.setPackage(getPackageName());
-
         update.putExtra("width", width);
         update.putExtra("height", height);
-
+        update.putExtra("lines", lines);
         sendBroadcast(update);
+    }
+
+    private void sendClear(int width, int height) {
+        sendLines(null, width, height);
     }
 
     private void createNotificationChannel() {
