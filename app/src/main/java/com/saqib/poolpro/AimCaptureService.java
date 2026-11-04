@@ -666,7 +666,6 @@ public class AimCaptureService extends Service {
 
         if (lines == null || lines.isEmpty()) return null;
 
-        // Ignore short fragments and select the strongest long candidate.
         Line best = null;
         for (Line line : lines) {
             if (line.length() >= 180f &&
@@ -676,36 +675,37 @@ public class AimCaptureService extends Service {
         }
         if (best == null) return null;
 
-        // The filled white cue ball has a denser white neighbourhood than
-        // the hollow collision marker. Use that endpoint as the ray origin.
+        // Filled cue-ball endpoint has a denser white cluster than the
+        // hollow collision marker.
         int density1 = whitePointsNear(points, best.x1, best.y1);
         int density2 = whitePointsNear(points, best.x2, best.y2);
 
-        float cueX, cueY, targetX, targetY;
+        float cueX, cueY, collisionX, collisionY;
         if (density1 >= density2) {
-            cueX = best.x1; cueY = best.y1;
-            targetX = best.x2; targetY = best.y2;
+            cueX = best.x1;
+            cueY = best.y1;
+            collisionX = best.x2;
+            collisionY = best.y2;
         } else {
-            cueX = best.x2; cueY = best.y2;
-            targetX = best.x1; targetY = best.y1;
+            cueX = best.x2;
+            cueY = best.y2;
+            collisionX = best.x1;
+            collisionY = best.y1;
         }
 
-        float dx = targetX - cueX;
-        float dy = targetY - cueY;
+        // Continue from the collision marker AWAY from the cue ball.
+        // The original cue-to-marker segment is already drawn by the game.
+        float dx = collisionX - cueX;
+        float dy = collisionY - cueY;
 
-        // Inner playing surface proportions for the landscape 8 Ball Pool table.
         float left = width * 0.195f;
         float right = width * 0.805f;
         float top = height * 0.237f;
         float bottom = height * 0.914f;
 
-        float[] ray = TableGeometry.extendRay(
-                cueX, cueY, dx, dy,
+        return TableGeometry.extendRay(
+                collisionX, collisionY, dx, dy,
                 left, top, right, bottom);
-
-        if (ray == null) return null;
-
-        return ray;
     }
 
     private void sendLines(float[] lines, int width, int height) {
