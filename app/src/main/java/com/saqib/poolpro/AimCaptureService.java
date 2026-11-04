@@ -681,7 +681,8 @@ public class AimCaptureService extends Service {
         super.onDestroy();
     }
 
-    @Override
+        @Override
     public IBinder onBind(Intent intent) {
         return null;
-                }
+    }
+}
