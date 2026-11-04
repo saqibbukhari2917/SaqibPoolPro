@@ -35,10 +35,16 @@ public class AimCaptureService extends Service {
     public static final String EXTRA_DATA = "projectionData";
     public static final String ACTION_LINE = "com.saqib.poolpro.AIM_LINE";
 
-    private static final String TAG = "PoolProDiagnostic";
+    private static final String TAG = "PoolProDiagnosticV2";
     private static final String CHANNEL_ID = "pool_capture";
     private static final int NOTIFICATION_ID = 7;
-    private static final int SAMPLE_STEP = 2;
+
+    // V2: har screen pixel sample hoga.
+    private static final int SAMPLE_STEP = 1;
+
+    // White aur anti-aliased white pixels.
+    private static final int WHITE_MIN = 185;
+    private static final int WHITE_SPREAD = 60;
 
     private MediaProjection projection;
     private VirtualDisplay virtualDisplay;
@@ -98,7 +104,7 @@ public class AimCaptureService extends Service {
         createNotificationChannel();
         startForeground(
                 NOTIFICATION_ID,
-                buildNotification("White-line detector starting"));
+                buildNotification("White-line Diagnostic V2 starting"));
     }
 
     @Override
@@ -145,7 +151,7 @@ public class AimCaptureService extends Service {
             final int width = metrics.widthPixels;
             final int height = metrics.heightPixels;
 
-            workerThread = new HandlerThread("PoolDiagnosticWorker");
+            workerThread = new HandlerThread("PoolDiagnosticV2Worker");
             workerThread.start();
             worker = new Handler(workerThread.getLooper());
 
@@ -167,10 +173,11 @@ public class AimCaptureService extends Service {
                     frameCount++;
 
                     List<Point> points = getWhitePoints(image);
+
                     List<Line> lines =
                             findConnectedLines(points, width, height);
 
-                    // Diagnostic mode: overlay clear rahega.
+                    // Diagnostic mode: overlay abhi clear rahega.
                     sendClear(width, height);
 
                     if (now - lastNotificationTime >= 1500) {
@@ -180,7 +187,7 @@ public class AimCaptureService extends Service {
                     }
 
                 } catch (Exception e) {
-                    Log.e(TAG, "Diagnostic error", e);
+                    Log.e(TAG, "Diagnostic V2 error", e);
                     sendClear(width, height);
                 } finally {
                     if (image != null) image.close();
@@ -197,7 +204,7 @@ public class AimCaptureService extends Service {
                     }, worker);
 
             virtualDisplay = projection.createVirtualDisplay(
-                    "SaqibPoolDiagnostic",
+                    "SaqibPoolDiagnosticV2",
                     width,
                     height,
                     metrics.densityDpi,
@@ -207,7 +214,7 @@ public class AimCaptureService extends Service {
                     worker
             );
 
-            updateNotification("White-pixel diagnostic running");
+            updateNotification("Diagnostic V2 running - no overlay lines");
 
         } catch (Exception e) {
             Log.e(TAG, "Capture start failed", e);
@@ -218,8 +225,8 @@ public class AimCaptureService extends Service {
     }
 
     /*
-     * White pixels RAM mein read hote hain.
-     * Screenshot ya image file save nahi hoti.
+     * Pixels sirf RAM mein read hote hain.
+     * Koi screenshot ya image file save nahi hoti.
      */
     private List<Point> getWhitePoints(Image image) {
 
@@ -254,7 +261,8 @@ public class AimCaptureService extends Service {
                 int min = Math.min(r, Math.min(g, b));
                 int max = Math.max(r, Math.max(g, b));
 
-                if (min >= 205 && max - min <= 35) {
+                if (min >= WHITE_MIN &&
+                        max - min <= WHITE_SPREAD) {
                     points.add(new Point(x, y));
                 }
             }
@@ -264,86 +272,76 @@ public class AimCaptureService extends Service {
     }
 
     /*
-     * 8-neighbour connected components.
-     * Har connected white group ko alag rakhta hai.
+     * White pixels ke connected groups nikalta hai.
+     * V2 mein sampling step 1 hai, is liye patli lines
+     * ke pixels miss hone ka chance kam hoga.
      */
     private List<Line> findConnectedLines(
             List<Point> points, int width, int height) {
 
         List<Line> lines = new ArrayList<>();
 
-        int gridW = width / SAMPLE_STEP + 2;
-        int gridH = height / SAMPLE_STEP + 2;
-
-        boolean[][] occupied = new boolean[gridH][gridW];
-        boolean[][] visited = new boolean[gridH][gridW];
+        boolean[][] occupied = new boolean[height][width];
+        boolean[][] visited = new boolean[height][width];
 
         for (Point p : points) {
-            int gx = p.x / SAMPLE_STEP;
-            int gy = p.y / SAMPLE_STEP;
-
-            if (gx >= 0 && gx < gridW &&
-                    gy >= 0 && gy < gridH) {
-                occupied[gy][gx] = true;
+            if (p.x >= 0 && p.x < width &&
+                    p.y >= 0 && p.y < height) {
+                occupied[p.y][p.x] = true;
             }
         }
 
         int[] dx = {-1, 0, 1, -1, 1, -1, 0, 1};
         int[] dy = {-1, -1, -1, 0, 0, 1, 1, 1};
 
-        for (int gy = 0; gy < gridH; gy++) {
-            for (int gx = 0; gx < gridW; gx++) {
+        for (Point start : points) {
 
-                if (!occupied[gy][gx] || visited[gy][gx]) {
-                    continue;
-                }
+            int sx = start.x;
+            int sy = start.y;
 
-                List<Point> component = new ArrayList<>();
-                ArrayDeque<int[]> queue = new ArrayDeque<>();
+            if (visited[sy][sx]) continue;
 
-                queue.add(new int[]{gx, gy});
-                visited[gy][gx] = true;
+            List<Point> component = new ArrayList<>();
+            ArrayDeque<Point> queue = new ArrayDeque<>();
 
-                while (!queue.isEmpty()) {
+            queue.add(new Point(sx, sy));
+            visited[sy][sx] = true;
 
-                    int[] current = queue.removeFirst();
-                    int cx = current[0];
-                    int cy = current[1];
+            while (!queue.isEmpty()) {
 
-                    component.add(new Point(
-                            cx * SAMPLE_STEP,
-                            cy * SAMPLE_STEP));
+                Point current = queue.removeFirst();
+                component.add(current);
 
-                    for (int k = 0; k < 8; k++) {
+                for (int k = 0; k < 8; k++) {
 
-                        int nx = cx + dx[k];
-                        int ny = cy + dy[k];
+                    int nx = current.x + dx[k];
+                    int ny = current.y + dy[k];
 
-                        if (nx < 0 || ny < 0 ||
-                                nx >= gridW || ny >= gridH) {
-                            continue;
-                        }
+                    if (nx < 0 || ny < 0 ||
+                            nx >= width || ny >= height) {
+                        continue;
+                    }
 
-                        if (occupied[ny][nx] &&
-                                !visited[ny][nx]) {
-
-                            visited[ny][nx] = true;
-                            queue.addLast(new int[]{nx, ny});
-                        }
+                    if (occupied[ny][nx] && !visited[ny][nx]) {
+                        visited[ny][nx] = true;
+                        queue.addLast(new Point(nx, ny));
                     }
                 }
+            }
 
-                if (component.size() < 4) continue;
+            if (component.size() < 5) continue;
 
-                Line line = fitLine(component);
+            Line line = fitLine(component);
 
-                if (line != null &&
-                        line.length() >= 10 &&
-                        line.error <= 4.0f) {
-                    lines.add(line);
-                }
+            if (line != null &&
+                    line.length() >= 7 &&
+                    line.error <= 5.5f) {
+                lines.add(line);
             }
         }
+
+        // Ek hi seedhi line ke tootay huay tukray jorna.
+        mergeCollinearSegments(lines);
 
         Collections.sort(lines, new Comparator<Line>() {
             @Override
@@ -352,19 +350,19 @@ public class AimCaptureService extends Service {
             }
         });
 
-        if (lines.size() > 12) {
-            return new ArrayList<>(lines.subList(0, 12));
+        if (lines.size() > 18) {
+            return new ArrayList<>(lines.subList(0, 18));
         }
 
         return lines;
     }
 
     /*
-     * PCA se component ki main direction aur endpoints.
+     * PCA se component ki direction aur endpoints.
      */
     private Line fitLine(List<Point> points) {
 
-        if (points.size() < 4) return null;
+        if (points.size() < 5) return null;
 
         double meanX = 0;
         double meanY = 0;
@@ -407,14 +405,10 @@ public class AimCaptureService extends Service {
 
             double projection = dx * ux + dy * uy;
 
-            minProjection = Math.min(
-                    minProjection, projection);
-            maxProjection = Math.max(
-                    maxProjection, projection);
+            minProjection = Math.min(minProjection, projection);
+            maxProjection = Math.max(maxProjection, projection);
 
-            double perpendicular =
-                    -dx * uy + dy * ux;
-
+            double perpendicular = -dx * uy + dy * ux;
             errorSum += perpendicular * perpendicular;
         }
 
@@ -430,6 +424,135 @@ public class AimCaptureService extends Service {
                 x1, y1, x2, y2, points.size(), error);
     }
 
+    /*
+     * Collinear components ko combine karta hai.
+     * Is se ek lambi aiming line ke tukray ek candidate ban sakte hain.
+     */
+    private void mergeCollinearSegments(List<Line> lines) {
+
+        boolean changed = true;
+        int safety = 0;
+
+        while (changed && safety++ < 80) {
+
+            changed = false;
+
+            outer:
+            for (int i = 0; i < lines.size(); i++) {
+                for (int j = i + 1; j < lines.size(); j++) {
+
+                    Line a = lines.get(i);
+                    Line b = lines.get(j);
+
+                    if (canMerge(a, b)) {
+                        Line merged = mergePair(a, b);
+                        lines.set(i, merged);
+                        lines.remove(j);
+                        changed = true;
+                        break outer;
+                    }
+                }
+            }
+        }
+    }
+
+    private boolean canMerge(Line a, Line b) {
+
+        float angleDiff = angleDifference(a.angle(), b.angle());
+        if (angleDiff > 7.0f) return false;
+
+        double radians = Math.toRadians(a.angle());
+        float ux = (float) Math.cos(radians);
+        float uy = (float) Math.sin(radians);
+
+        float centerDx = b.centerX() - a.centerX();
+        float centerDy = b.centerY() - a.centerY();
+
+        float perpendicular = Math.abs(
+                -centerDx * uy + centerDy * ux);
+
+        if (perpendicular > 7.0f) return false;
+
+        float a1 = a.x1 * ux + a.y1 * uy;
+        float a2 = a.x2 * ux + a.y2 * uy;
+        float b1 = b.x1 * ux + b.y1 * uy;
+        float b2 = b.x2 * ux + b.y2 * uy;
+
+        float aMin = Math.min(a1, a2);
+        float aMax = Math.max(a1, a2);
+        float bMin = Math.min(b1, b2);
+        float bMax = Math.max(b1, b2);
+
+        float gap = Math.max(
+                0f, Math.max(aMin, bMin) - Math.min(aMax, bMax));
+
+        return gap <= 65.0f;
+    }
+
+    private float angleDifference(float a, float b) {
+
+        float diff = Math.abs(a - b) % 180f;
+        if (diff > 90f) diff = 180f - diff;
+        return diff;
+    }
+
+    private Line mergePair(Line a, Line b) {
+
+        float radiansA = (float) Math.toRadians(a.angle());
+        float radiansB = (float) Math.toRadians(b.angle());
+
+        float ux = (float) (
+                Math.cos(radiansA) * a.votes +
+                Math.cos(radiansB) * b.votes);
+
+        float uy = (float) (
+                Math.sin(radiansA) * a.votes +
+                Math.sin(radiansB) * b.votes);
+
+        float norm = (float) Math.hypot(ux, uy);
+        if (norm < 0.001f) return a;
+
+        ux /= norm;
+        uy /= norm;
+
+        float totalVotes = a.votes + b.votes;
+
+        float cx = (
+                a.centerX() * a.votes +
+                b.centerX() * b.votes) / totalVotes;
+
+        float cy = (
+                a.centerY() * a.votes +
+                b.centerY() * b.votes) / totalVotes;
+
+        float min = Float.MAX_VALUE;
+        float max = -Float.MAX_VALUE;
+
+        float[] xs = {a.x1, a.x2, b.x1, b.x2};
+        float[] ys = {a.y1, a.y2, b.y1, b.y2};
+
+        for (int i = 0; i < 4; i++) {
+            float projection = (xs[i] - cx) * ux +
+                    (ys[i] - cy) * uy;
+
+            min = Math.min(min, projection);
+            max = Math.max(max, projection);
+        }
+
+        float x1 = cx + min * ux;
+        float y1 = cy + min * uy;
+        float x2 = cx + max * ux;
+        float y2 = cy + max * uy;
+
+        float error = (
+                a.error * a.votes + b.error * b.votes) /
+                totalVotes;
+
+        return new Line(
+                x1, y1, x2, y2,
+                a.votes + b.votes, error);
+    }
+
     private String makeReport(
             List<Line> lines,
             int whiteCount,
@@ -438,9 +561,9 @@ public class AimCaptureService extends Service {
 
         StringBuilder report = new StringBuilder();
 
-        report.append("Frames: ").append(frameCount)
+        report.append("V2 Frames: ").append(frameCount)
                 .append(" | White: ").append(whiteCount)
-                .append(" | Components: ").append(lines.size());
+                .append(" | Lines: ").append(lines.size());
 
         for (int i = 0; i < lines.size(); i++) {
 
@@ -505,7 +628,7 @@ public class AimCaptureService extends Service {
         if (Build.VERSION.SDK_INT >= 26) {
 
             return new Notification.Builder(this, CHANNEL_ID)
-                    .setContentTitle("Saqib Pool Pro - Diagnostic")
+                    .setContentTitle("Saqib Pool Pro - Diagnostic V2")
                     .setContentText(message)
                     .setStyle(new Notification.BigTextStyle()
                             .bigText(message))
@@ -514,7 +637,7 @@ public class AimCaptureService extends Service {
         }
 
         return new Notification.Builder(this)
-                .setContentTitle("Saqib Pool Pro - Diagnostic")
+                .setContentTitle("Saqib Pool Pro - Diagnostic V2")
                 .setContentText(message)
                 .setStyle(new Notification.BigTextStyle()
                         .bigText(message))
@@ -561,5 +684,4 @@ public class AimCaptureService extends Service {
     @Override
     public IBinder onBind(Intent intent) {
         return null;
-    }
-    }
+                }
