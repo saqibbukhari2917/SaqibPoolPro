@@ -691,3 +691,20 @@ public class AimCaptureService extends Service {
         if (projection != null) {
             projection.stop();
         
+            projection = null;
+        }
+
+        if (workerThread != null) {
+            workerThread.quitSafely();
+            workerThread = null;
+            worker = null;
+        }
+
+        super.onDestroy();
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+}
