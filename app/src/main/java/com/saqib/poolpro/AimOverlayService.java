@@ -100,7 +100,7 @@ public class AimOverlayService extends Service {
 
         void setLines(float[] points, int width, int height) {
 
-            if (points == null || points.length < 8) {
+            if (points == null || points.length < 4 || points.length % 4 != 0) {
                 lines = null;
             } else {
                 lines = points.clone();
@@ -116,18 +116,16 @@ public class AimOverlayService extends Service {
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
 
-            if (lines == null || lines.length < 8) return;
+            if (lines == null || lines.length < 4) return;
 
             float sx = getWidth() / (float) sourceWidth;
             float sy = getHeight() / (float) sourceHeight;
 
-            canvas.drawLine(
-                    lines[0] * sx, lines[1] * sy,
-                    lines[2] * sx, lines[3] * sy, paint);
-
-            canvas.drawLine(
-                    lines[4] * sx, lines[5] * sy,
-                    lines[6] * sx, lines[7] * sy, paint);
+            for (int i = 0; i + 3 < lines.length; i += 4) {
+                canvas.drawLine(
+                        lines[i] * sx, lines[i + 1] * sy,
+                        lines[i + 2] * sx, lines[i + 3] * sy, paint);
+            }
         }
     }
 
