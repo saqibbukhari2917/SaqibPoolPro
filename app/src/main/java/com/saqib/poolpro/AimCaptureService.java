@@ -158,67 +158,13 @@ public class AimCaptureService extends Service {
 
             worker = new Handler(workerThread.getLooper());
 
-            imageReader = ImageReader.newInstance(
-                    width,
-                    height,
-                    PixelFormat.RGBA_8888,
-                    3
-            );
+            captureWidth = width;
+            captureHeight = height;
+            captureDensityDpi = metrics.densityDpi;
+            imageReader = createCaptureReader(width, height);
+            displayManager = (DisplayManager) getSystemService(DISPLAY_SERVICE);
+            displayManager.registerDisplayListener(displayListener, worker);
 
-            imageReader.setOnImageAvailableListener(reader -> {
-
-                Image image = null;
-
-                try {
-                    image = reader.acquireLatestImage();
-
-                    if (image == null) return;
-
-                    long now = System.currentTimeMillis();
-
-                    if (now - lastFrameTime < 250) return;
-
-                    lastFrameTime = now;
-                    frameCount++;
-
-                    int imageWidth = image.getWidth();
-                    int imageHeight = image.getHeight();
-
-                    List<Point> points = getWhitePoints(image);
-
-                    List<Line> lines = findConnectedLines(
-                            points,
-                            imageWidth,
-                            imageHeight
-                    );
-
-                    // Diagnostic mode: no unverified overlay lines.
-                    sendClear(imageWidth, imageHeight);
-
-                    if (now - lastNotificationTime >= 1500) {
-                        lastNotificationTime = now;
-
-                        updateNotification(makeReport(
-                                lines,
-                                points.size(),
-                                width,
-                                height,
-                                imageWidth,
-                                imageHeight
-                        ));
-                    }
-
-                } catch (Exception e) {
-                    Log.e(TAG, "Detector error", e);
-                    sendClear(width, height);
-
-                } finally {
-                    if (image != null) {
-                        image.close();
-                    }
-                }
-
-            }, worker);
 
             projection.registerCallback(
                     new MediaProjection.Callback() {
@@ -249,6 +195,104 @@ public class AimCaptureService extends Service {
         }
 
         return START_NOT_STICKY;
+    }
+
+
+    private int captureWidth;
+    private int captureHeight;
+    private int captureDensityDpi;
+    private DisplayManager displayManager;
+    private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
+        @Override public void onDisplayAdded(int displayId) { }
+        @Override public void onDisplayRemoved(int displayId) { }
+        @Override public void onDisplayChanged(int displayId) {
+            if (displayId == android.view.Display.DEFAULT_DISPLAY && worker != null) {
+                worker.post(() -> refreshCaptureSize());
+            }
+        }
+    };
+
+    private void refreshCaptureSize() {
+        if (virtualDisplay == null || imageReader == null) return;
+        DisplayMetrics m = new DisplayMetrics();
+        android.view.WindowManager wm = (android.view.WindowManager) getSystemService(WINDOW_SERVICE);
+        wm.getDefaultDisplay().getRealMetrics(m);
+        if (m.widthPixels == captureWidth && m.heightPixels == captureHeight) return;
+        captureWidth = m.widthPixels;
+        captureHeight = m.heightPixels;
+        captureDensityDpi = m.densityDpi;
+        ImageReader oldReader = imageReader;
+        imageReader = null;
+        ImageReader newReader = createCaptureReader(captureWidth, captureHeight);
+        virtualDisplay.resize(captureWidth, captureHeight, captureDensityDpi);
+        virtualDisplay.setSurface(newReader.getSurface());
+        oldReader.close();
+        updateNotification("Capture resized: " + captureWidth + "x" + captureHeight);
+    }
+
+    private ImageReader createCaptureReader(int width, int height) {
+        imageReader = ImageReader.newInstance(
+                width,
+                height,
+                PixelFormat.RGBA_8888,
+                3
+        );
+
+        imageReader.setOnImageAvailableListener(reader -> {
+
+            Image image = null;
+
+            try {
+                image = reader.acquireLatestImage();
+
+                if (image == null) return;
+
+                long now = System.currentTimeMillis();
+
+                if (now - lastFrameTime < 250) return;
+
+                lastFrameTime = now;
+                frameCount++;
+
+                int imageWidth = image.getWidth();
+                int imageHeight = image.getHeight();
+
+                List<Point> points = getWhitePoints(image);
+
+                List<Line> lines = findConnectedLines(
+                        points,
+                        imageWidth,
+                        imageHeight
+                );
+
+                // Diagnostic mode: no unverified overlay lines.
+                sendClear(imageWidth, imageHeight);
+
+                if (now - lastNotificationTime >= 1500) {
+                    lastNotificationTime = now;
+
+                    updateNotification(makeReport(
+                            lines,
+                            points.size(),
+                            width,
+                            height,
+                            imageWidth,
+                            imageHeight
+                    ));
+                }
+
+            } catch (Exception e) {
+                Log.e(TAG, "Detector error", e);
+                sendClear(width, height);
+
+            } finally {
+                if (image != null) {
+                    image.close();
+                }
+            }
+
+        }, worker);
+        return imageReader;
     }
 
     // Screen pixels are processed in RAM. No screenshot is saved.
@@ -677,6 +721,11 @@ public class AimCaptureService extends Service {
 
     @Override
     public void onDestroy() {
+
+        if (displayManager != null) {
+            displayManager.unregisterDisplayListener(displayListener);
+            displayManager = null;
+        }
 
         if (virtualDisplay != null) {
             virtualDisplay.release();
