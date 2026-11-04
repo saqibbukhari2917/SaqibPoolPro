@@ -664,48 +664,105 @@ public class AimCaptureService extends Service {
             List<Line> lines, List<Point> points,
             int width, int height) {
 
-        if (lines == null || lines.isEmpty()) return null;
+        if (lines == null || lines.size() < 2) return null;
 
-        Line best = null;
-        for (Line line : lines) {
-            if (line.length() >= 180f &&
-                    (best == null || line.length() > best.length())) {
-                best = line;
+        // The required sources are the TWO short post-contact guide lines.
+        // Never select the long cue-ball incoming guide.
+        Line first = null;
+        Line second = null;
+        float bestScore = Float.POSITIVE_INFINITY;
+
+        for (int i = 0; i < lines.size(); i++) {
+            Line a = lines.get(i);
+            float lenA = a.length();
+            if (lenA < 28f || lenA > 230f) continue;
+
+            for (int j = i + 1; j < lines.size(); j++) {
+                Line b = lines.get(j);
+                float lenB = b.length();
+                if (lenB < 28f || lenB > 230f) continue;
+
+                float angle = angleDifference(a.angle(), b.angle());
+                if (angle < 28f || angle > 152f) continue;
+
+                // Find the closest pair of endpoints. The two short guide
+                // segments should meet at the collision/contact marker.
+                float[][] ea = {{a.x1, a.y1}, {a.x2, a.y2}};
+                float[][] eb = {{b.x1, b.y1}, {b.x2, b.y2}};
+                float gap = Float.MAX_VALUE;
+
+                for (float[] pa : ea) {
+                    for (float[] pb : eb) {
+                        float d = (float) Math.hypot(pa[0] - pb[0], pa[1] - pb[1]);
+                        if (d < gap) gap = d;
+                    }
+                }
+
+                if (gap > 34f) continue;
+
+                // Prefer a tight shared endpoint and two clearly visible
+                // short segments, rather than unrelated white table details.
+                float score = gap * 5f
+                        + Math.abs(lenA - lenB) * 0.12f
+                        - Math.min(a.votes, b.votes) * 0.002f;
+
+                if (score < bestScore) {
+                    bestScore = score;
+                    first = a;
+                    second = b;
+                }
             }
         }
-        if (best == null) return null;
 
-        // Filled cue-ball endpoint has a denser white cluster than the
-        // hollow collision marker.
-        int density1 = whitePointsNear(points, best.x1, best.y1);
-        int density2 = whitePointsNear(points, best.x2, best.y2);
+        if (first == null || second == null) return null;
 
-        float cueX, cueY, collisionX, collisionY;
-        if (density1 >= density2) {
-            cueX = best.x1;
-            cueY = best.y1;
-            collisionX = best.x2;
-            collisionY = best.y2;
-        } else {
-            cueX = best.x2;
-            cueY = best.y2;
-            collisionX = best.x1;
-            collisionY = best.y1;
+        // Determine the shared endpoint pair and use its midpoint as the
+        // common collision origin. Each ray follows its OWN detected line.
+        float bestGap = Float.MAX_VALUE;
+        float originX = 0f, originY = 0f;
+        float firstOuterX = 0f, firstOuterY = 0f;
+        float secondOuterX = 0f, secondOuterY = 0f;
+
+        float[][] fEnds = {{first.x1, first.y1}, {first.x2, first.y2}};
+        float[][] sEnds = {{second.x1, second.y1}, {second.x2, second.y2}};
+
+        for (int fi = 0; fi < 2; fi++) {
+            for (int si = 0; si < 2; si++) {
+                float fx = fEnds[fi][0], fy = fEnds[fi][1];
+                float sx = sEnds[si][0], sy = sEnds[si][1];
+                float gap = (float) Math.hypot(fx - sx, fy - sy);
+
+                if (gap < bestGap) {
+                    bestGap = gap;
+                    originX = (fx + sx) * 0.5f;
+                    originY = (fy + sy) * 0.5f;
+
+                    int fo = 1 - fi;
+                    int so = 1 - si;
+                    firstOuterX = fEnds[fo][0];
+                    firstOuterY = fEnds[fo][1];
+                    secondOuterX = sEnds[so][0];
+                    secondOuterY = sEnds[so][1];
+                }
+            }
         }
 
-        // Continue from the collision marker AWAY from the cue ball.
-        // The original cue-to-marker segment is already drawn by the game.
-        float dx = collisionX - cueX;
-        float dy = collisionY - cueY;
+        if (bestGap > 34f) return null;
 
         float left = width * 0.195f;
         float right = width * 0.805f;
         float top = height * 0.237f;
         float bottom = height * 0.914f;
 
-        return TableGeometry.extendRay(
-                collisionX, collisionY, dx, dy,
+        // Extend BOTH short post-contact rays from their common marker.
+        float[] pair = TableGeometry.extendTwoLinesFromOrigins(
+                originX, originY,
+                firstOuterX - originX, firstOuterY - originY,
+                originX, originY,
+                secondOuterX - originX, secondOuterY - originY,
                 left, top, right, bottom);
+
+        return pair;
     }
 
     private void sendLines(float[] lines, int width, int height) {
