@@ -1,4 +1,3 @@
-
 package com.saqib.poolpro;
 
 import android.app.Notification;
@@ -22,10 +21,8 @@ import android.util.DisplayMetrics;
 import android.util.Log;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -35,14 +32,11 @@ public class AimCaptureService extends Service {
     public static final String EXTRA_DATA = "projectionData";
     public static final String ACTION_LINE = "com.saqib.poolpro.AIM_LINE";
 
-    private static final String TAG = "PoolProDiagnosticV2";
+    private static final String TAG = "PoolProDiagnosticV3";
     private static final String CHANNEL_ID = "pool_capture";
     private static final int NOTIFICATION_ID = 7;
 
-    // V2: har screen pixel sample hoga.
     private static final int SAMPLE_STEP = 1;
-
-    // White aur anti-aliased white pixels.
     private static final int WHITE_MIN = 185;
     private static final int WHITE_SPREAD = 60;
 
@@ -58,7 +52,6 @@ public class AimCaptureService extends Service {
 
     private static class Point {
         int x, y;
-
         Point(int x, int y) {
             this.x = x;
             this.y = y;
@@ -102,9 +95,8 @@ public class AimCaptureService extends Service {
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
-        startForeground(
-                NOTIFICATION_ID,
-                buildNotification("White-line Diagnostic V2 starting"));
+        startForeground(NOTIFICATION_ID,
+                buildNotification("White-line detector starting"));
     }
 
     @Override
@@ -151,7 +143,7 @@ public class AimCaptureService extends Service {
             final int width = metrics.widthPixels;
             final int height = metrics.heightPixels;
 
-            workerThread = new HandlerThread("PoolDiagnosticV2Worker");
+            workerThread = new HandlerThread("PoolDetectorWorker");
             workerThread.start();
             worker = new Handler(workerThread.getLooper());
 
@@ -173,11 +165,10 @@ public class AimCaptureService extends Service {
                     frameCount++;
 
                     List<Point> points = getWhitePoints(image);
-
                     List<Line> lines =
                             findConnectedLines(points, width, height);
 
-                    // Diagnostic mode: overlay abhi clear rahega.
+                    // Diagnostic mode: abhi koi overlay line nahi.
                     sendClear(width, height);
 
                     if (now - lastNotificationTime >= 1500) {
@@ -187,7 +178,7 @@ public class AimCaptureService extends Service {
                     }
 
                 } catch (Exception e) {
-                    Log.e(TAG, "Diagnostic V2 error", e);
+                    Log.e(TAG, "Detector error", e);
                     sendClear(width, height);
                 } finally {
                     if (image != null) image.close();
@@ -204,7 +195,7 @@ public class AimCaptureService extends Service {
                     }, worker);
 
             virtualDisplay = projection.createVirtualDisplay(
-                    "SaqibPoolDiagnosticV2",
+                    "SaqibPoolDetector",
                     width,
                     height,
                     metrics.densityDpi,
@@ -214,7 +205,7 @@ public class AimCaptureService extends Service {
                     worker
             );
 
-            updateNotification("Diagnostic V2 running - no overlay lines");
+            updateNotification("White-line detector running");
 
         } catch (Exception e) {
             Log.e(TAG, "Capture start failed", e);
@@ -224,10 +215,7 @@ public class AimCaptureService extends Service {
         return START_NOT_STICKY;
     }
 
-    /*
-     * Pixels sirf RAM mein read hote hain.
-     * Koi screenshot ya image file save nahi hoti.
-     */
+    // Screen pixels RAM mein read hote hain; file save nahi hoti.
     private List<Point> getWhitePoints(Image image) {
 
         List<Point> points = new ArrayList<>();
@@ -272,221 +260,197 @@ public class AimCaptureService extends Service {
     }
 
     /*
-     * White pixels ke connected groups nikalta hai.
-     * V2 mein sampling step 1 hai, is liye patli lines
-     * ke pixels miss hone ka chance kam hoga.
+     * Hough line detector:
+     * white pixels ki line direction aur position ke liye voting.
+     * Is stage par lines sirf diagnostic candidates hain.
      */
     private List<Line> findConnectedLines(
             List<Point> points, int width, int height) {
 
-        List<Line> lines = new ArrayList<>();
+        List<Line> result = new ArrayList<>();
+        if (points == null || points.size() < 8) return result;
 
-        boolean[][] occupied = new boolean[height][width];
-        boolean[][] visited = new boolean[height][width];
+        final int thetaCount = 180;
+        final int diagonal = (int) Math.ceil(Math.hypot(width, height));
+        final int rhoCount = diagonal * 2 + 1;
+
+        int[][] accumulator = new int[thetaCount][rhoCount];
+        float[] cos = new float[thetaCount];
+        float[] sin = new float[thetaCount];
+
+        for (int t = 0; t < thetaCount; t++) {
+            double angle = Math.toRadians(t);
+            cos[t] = (float) Math.cos(angle);
+            sin[t] = (float) Math.sin(angle);
+        }
 
         for (Point p : points) {
-            if (p.x >= 0 && p.x < width &&
-                    p.y >= 0 && p.y < height) {
-                occupied[p.y][p.x] = true;
-            }
-        }
+            for (int t = 0; t < thetaCount; t++) {
+                int rho = Math.round(
+                        p.x * cos[t] + p.y * sin[t]) + diagonal;
 
-        int[] dx = {-1, 0, 1, -1, 1, -1, 0, 1};
-        int[] dy = {-1, -1, -1, 0, 0, 1, 1, 1};
-
-        for (Point start : points) {
-
-            int sx = start.x;
-            int sy = start.y;
-
-            if (visited[sy][sx]) continue;
-
-            List<Point> component = new ArrayList<>();
-            ArrayDeque<Point> queue = new ArrayDeque<>();
-
-            queue.add(new Point(sx, sy));
-            visited[sy][sx] = true;
-
-            while (!queue.isEmpty()) {
-
-                Point current = queue.removeFirst();
-                component.add(current);
-
-                for (int k = 0; k < 8; k++) {
-
-                    int nx = current.x + dx[k];
-                    int ny = current.y + dy[k];
-
-                    if (nx < 0 || ny < 0 ||
-                            nx >= width || ny >= height) {
-                        continue;
-                    }
-
-                    if (occupied[ny][nx] && !visited[ny][nx]) {
-                        visited[ny][nx] = true;
-                        queue.addLast(new Point(nx, ny));
-                    }
-                }
-            }
-
-            if (component.size() < 5) continue;
-
-            Line line = fitLine(component);
-
-            if (line != null &&
-                    line.length() >= 7 &&
-                    line.error <= 5.5f) {
-                lines.add(line);
-            }
-        }
-
-        // Ek hi seedhi line ke tootay huay tukray jorna.
-        mergeCollinearSegments(lines);
-
-        Collections.sort(lines, new Comparator<Line>() {
-            @Override
-            public int compare(Line a, Line b) {
-                return Float.compare(b.length(), a.length());
-            }
-        });
-
-        if (lines.size() > 18) {
-            return new ArrayList<>(lines.subList(0, 18));
-        }
-
-        return lines;
-    }
-
-    /*
-     * PCA se component ki direction aur endpoints.
-     */
-    private Line fitLine(List<Point> points) {
-
-        if (points.size() < 5) return null;
-
-        double meanX = 0;
-        double meanY = 0;
-
-        for (Point p : points) {
-            meanX += p.x;
-            meanY += p.y;
-        }
-
-        meanX /= points.size();
-        meanY /= points.size();
-
-        double xx = 0;
-        double yy = 0;
-        double xy = 0;
-
-        for (Point p : points) {
-            double dx = p.x - meanX;
-            double dy = p.y - meanY;
-
-            xx += dx * dx;
-            yy += dy * dy;
-            xy += dx * dy;
-        }
-
-        double angle = 0.5 * Math.atan2(
-                2 * xy, xx - yy);
-
-        double ux = Math.cos(angle);
-        double uy = Math.sin(angle);
-
-        double minProjection = Double.MAX_VALUE;
-        double maxProjection = -Double.MAX_VALUE;
-        double errorSum = 0;
-
-        for (Point p : points) {
-
-            double dx = p.x - meanX;
-            double dy = p.y - meanY;
-
-            double projection = dx * ux + dy * uy;
-
-            minProjection = Math.min(minProjection, projection);
-            maxProjection = Math.max(maxProjection, projection);
-
-            double perpendicular = -dx * uy + dy * ux;
-            errorSum += perpendicular * perpendicular;
-        }
-
-        float error = (float) Math.sqrt(
-                errorSum / points.size());
-
-        float x1 = (float) (meanX + minProjection * ux);
-        float y1 = (float) (meanY + minProjection * uy);
-        float x2 = (float) (meanX + maxProjection * ux);
-        float y2 = (float) (meanY + maxProjection * uy);
-
-        return new Line(
-                x1, y1, x2, y2, points.size(), error);
-    }
-
-    /*
-     * Collinear components ko combine karta hai.
-     * Is se ek lambi aiming line ke tukray ek candidate ban sakte hain.
-     */
-    private void mergeCollinearSegments(List<Line> lines) {
-
-        boolean changed = true;
-        int safety = 0;
-
-        while (changed && safety++ < 80) {
-
-            changed = false;
-
-            outer:
-            for (int i = 0; i < lines.size(); i++) {
-                for (int j = i + 1; j < lines.size(); j++) {
-
-                    Line a = lines.get(i);
-                    Line b = lines.get(j);
-
-                    if (canMerge(a, b)) {
-                        Line merged = mergePair(a, b);
-                        lines.set(i, merged);
-                        lines.remove(j);
-                        changed = true;
-                        break outer;
-                    }
+                if (rho >= 0 && rho < rhoCount) {
+                    accumulator[t][rho]++;
                 }
             }
         }
-    }
 
-    private boolean canMerge(Line a, Line b) {
+        class Peak {
+            int theta, rho, votes;
 
-        float angleDiff = angleDifference(a.angle(), b.angle());
-        if (angleDiff > 7.0f) return false;
+            Peak(int theta, int rho, int votes) {
+                this.theta = theta;
+                this.rho = rho;
+                this.votes = votes;
+            }
+        }
 
-        double radians = Math.toRadians(a.angle());
-        float ux = (float) Math.cos(radians);
-        float uy = (float) Math.sin(radians);
+        List<Peak> peaks = new ArrayList<>();
 
-        float centerDx = b.centerX() - a.centerX();
-        float centerDy = b.centerY() - a.centerY();
+        for (int t = 0; t < thetaCount; t++) {
+            for (int r = 0; r < rhoCount; r++) {
 
-        float perpendicular = Math.abs(
-                -centerDx * uy + centerDy * ux);
+                int votes = accumulator[t][r];
+                if (votes < 9) continue;
 
-        if (perpendicular > 7.0f) return false;
+                boolean maximum = true;
 
-        float a1 = a.x1 * ux + a.y1 * uy;
-        float a2 = a.x2 * ux + a.y2 * uy;
-        float b1 = b.x1 * ux + b.y1 * uy;
-        float b2 = b.x2 * ux + b.y2 * uy;
+                for (int dt = -2; dt <= 2 && maximum; dt++) {
+                    for (int dr = -3; dr <= 3; dr++) {
 
-        float aMin = Math.min(a1, a2);
-        float aMax = Math.max(a1, a2);
-        float bMin = Math.min(b1, b2);
-        float bMax = Math.max(b1, b2);
+                        if (dt == 0 && dr == 0) continue;
 
-        float gap = Math.max(
-                0f, Math.max(aMin, bMin) - Math.min(aMax, bMax));
+                        int nt = (t + dt + thetaCount) % thetaCount;
+                        int nr = r + dr;
 
-        return gap <= 65.0f;
+                        if (nr >= 0 && nr < rhoCount &&
+                                accumulator[nt][nr] > votes) {
+                            maximum = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (maximum) {
+                    peaks.add(new Peak(t, r, votes));
+                }
+            }
+        }
+
+        Collections.sort(peaks,
+                (a, b) -> Integer.compare(b.votes, a.votes));
+
+        int peakLimit = Math.min(peaks.size(), 100);
+
+        for (int pi = 0; pi < peakLimit && result.size() < 35; pi++) {
+
+            Peak peak = peaks.get(pi);
+
+            float nx = cos[peak.theta];
+            float ny = sin[peak.theta];
+            float ux = -ny;
+            float uy = nx;
+
+            float targetRho = peak.rho - diagonal;
+
+            List<Float> projections = new ArrayList<>();
+
+            for (Point p : points) {
+
+                float distance = Math.abs(
+                        p.x * nx + p.y * ny - targetRho);
+
+                if (distance <= 1.8f) {
+                    projections.add(p.x * ux + p.y * uy);
+                }
+            }
+
+            if (projections.size() < 8) continue;
+
+            Collections.sort(projections);
+
+            float segmentStart = projections.get(0);
+            float previous = segmentStart;
+            int count = 1;
+
+            for (int i = 1; i <= projections.size(); i++) {
+
+                boolean split = i == projections.size();
+
+                if (!split) {
+                    split = projections.get(i) - previous > 10.0f;
+                }
+
+                if (split) {
+
+                    float segmentEnd = previous;
+                    float segmentLength = segmentEnd - segmentStart;
+
+                    if (segmentLength >= 10.0f && count >= 7) {
+
+                        float mx = nx * targetRho;
+                        float my = ny * targetRho;
+
+                        Line candidate = new Line(
+                                mx + ux * segmentStart,
+                                my + uy * segmentStart,
+                                mx + ux * segmentEnd,
+                                my + uy * segmentEnd,
+                                count, 1.0f);
+
+                        boolean duplicate = false;
+
+                        for (Line old : result) {
+
+                            float angleDiff = angleDifference(
+                                    old.angle(), candidate.angle());
+
+                            if (angleDiff >= 3.0f) continue;
+
+                            float dx = candidate.centerX() - old.centerX();
+                            float dy = candidate.centerY() - old.centerY();
+
+                            float angle =
+                                    (float) Math.toRadians(old.angle());
+
+                            float perpendicular = Math.abs(
+                                    -dx * (float) Math.sin(angle) +
+                                            dy * (float) Math.cos(angle));
+
+                            if (perpendicular < 4.0f &&
+                                    Math.abs(old.length() -
+                                            candidate.length()) < 18.0f) {
+                                duplicate = true;
+                                break;
+                            }
+                        }
+
+                        if (!duplicate) {
+                            result.add(candidate);
+                        }
+                    }
+
+                    if (i < projections.size()) {
+                        segmentStart = projections.get(i);
+                        previous = segmentStart;
+                        count = 1;
+                    }
+
+                } else {
+                    previous = projections.get(i);
+                    count++;
+                }
+            }
+        }
+
+        Collections.sort(result,
+                (a, b) -> Float.compare(b.length(), a.length()));
+
+        if (result.size() > 18) {
+            return new ArrayList<>(result.subList(0, 18));
+        }
+
+        return result;
     }
 
     private float angleDifference(float a, float b) {
@@ -494,63 +458,6 @@ public class AimCaptureService extends Service {
         float diff = Math.abs(a - b) % 180f;
         if (diff > 90f) diff = 180f - diff;
         return diff;
-    }
-
-    private Line mergePair(Line a, Line b) {
-
-        float radiansA = (float) Math.toRadians(a.angle());
-        float radiansB = (float) Math.toRadians(b.angle());
-
-        float ux = (float) (
-                Math.cos(radiansA) * a.votes +
-                Math.cos(radiansB) * b.votes);
-
-        float uy = (float) (
-                Math.sin(radiansA) * a.votes +
-                Math.sin(radiansB) * b.votes);
-
-        float norm = (float) Math.hypot(ux, uy);
-        if (norm < 0.001f) return a;
-
-        ux /= norm;
-        uy /= norm;
-
-        float totalVotes = a.votes + b.votes;
-
-        float cx = (
-                a.centerX() * a.votes +
-                b.centerX() * b.votes) / totalVotes;
-
-        float cy = (
-                a.centerY() * a.votes +
-                b.centerY() * b.votes) / totalVotes;
-
-        float min = Float.MAX_VALUE;
-        float max = -Float.MAX_VALUE;
-
-        float[] xs = {a.x1, a.x2, b.x1, b.x2};
-        float[] ys = {a.y1, a.y2, b.y1, b.y2};
-
-        for (int i = 0; i < 4; i++) {
-            float projection = (xs[i] - cx) * ux +
-                    (ys[i] - cy) * uy;
-
-            min = Math.min(min, projection);
-            max = Math.max(max, projection);
-        }
-
-        float x1 = cx + min * ux;
-        float y1 = cy + min * uy;
-        float x2 = cx + max * ux;
-        float y2 = cy + max * uy;
-
-        float error = (
-                a.error * a.votes + b.error * b.votes) /
-                totalVotes;
-
-        return new Line(
-                x1, y1, x2, y2,
-                a.votes + b.votes, error);
     }
 
     private String makeReport(
@@ -561,7 +468,7 @@ public class AimCaptureService extends Service {
 
         StringBuilder report = new StringBuilder();
 
-        report.append("V2 Frames: ").append(frameCount)
+        report.append("V3 Frames: ").append(frameCount)
                 .append(" | White: ").append(whiteCount)
                 .append(" | Lines: ").append(lines.size());
 
@@ -628,7 +535,7 @@ public class AimCaptureService extends Service {
         if (Build.VERSION.SDK_INT >= 26) {
 
             return new Notification.Builder(this, CHANNEL_ID)
-                    .setContentTitle("Saqib Pool Pro - Diagnostic V2")
+                    .setContentTitle("Saqib Pool Pro - Detector V3")
                     .setContentText(message)
                     .setStyle(new Notification.BigTextStyle()
                             .bigText(message))
@@ -637,7 +544,7 @@ public class AimCaptureService extends Service {
         }
 
         return new Notification.Builder(this)
-                .setContentTitle("Saqib Pool Pro - Diagnostic V2")
+                .setContentTitle("Saqib Pool Pro - Detector V3")
                 .setContentText(message)
                 .setStyle(new Notification.BigTextStyle()
                         .bigText(message))
@@ -681,8 +588,8 @@ public class AimCaptureService extends Service {
         super.onDestroy();
     }
 
-        @Override
+    @Override
     public IBinder onBind(Intent intent) {
         return null;
     }
-}
+    }
