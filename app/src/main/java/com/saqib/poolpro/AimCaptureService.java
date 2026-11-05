@@ -149,8 +149,11 @@ public class AimCaptureService extends Service {
 
             wm.getDefaultDisplay().getRealMetrics(metrics);
 
-            final int width = metrics.widthPixels;
-            final int height = metrics.heightPixels;
+            int[] orientedSize = getOrientedSize(
+                    wm.getDefaultDisplay(), metrics);
+            final int width = orientedSize[0];
+            final int height = orientedSize[1];
+            captureRotation = orientedSize[2];
 
             workerThread =
                     new HandlerThread("PoolDetectorWorker");
@@ -201,6 +204,35 @@ public class AimCaptureService extends Service {
     private int captureWidth;
     private int captureHeight;
     private int captureDensityDpi;
+    private int captureRotation = -1;
+
+    /*
+     * Some devices report the natural portrait metrics to a Service even
+     * while the foreground game is landscape. Normalize dimensions using
+     * the real display rotation before creating/resizing the virtual display.
+     */
+    private int[] getOrientedSize(
+            android.view.Display display, DisplayMetrics metrics) {
+        int rotation = display.getRotation();
+        int width = metrics.widthPixels;
+        int height = metrics.heightPixels;
+
+        boolean landscape =
+                rotation == android.view.Surface.ROTATION_90 ||
+                rotation == android.view.Surface.ROTATION_270;
+
+        if (landscape && height > width) {
+            int temp = width;
+            width = height;
+            height = temp;
+        } else if (!landscape && width > height) {
+            int temp = width;
+            width = height;
+            height = temp;
+        }
+
+        return new int[] { width, height, rotation };
+    }
     private DisplayManager displayManager;
     private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
         @Override public void onDisplayAdded(int displayId) { }
@@ -217,9 +249,16 @@ public class AimCaptureService extends Service {
         DisplayMetrics m = new DisplayMetrics();
         android.view.WindowManager wm = (android.view.WindowManager) getSystemService(WINDOW_SERVICE);
         wm.getDefaultDisplay().getRealMetrics(m);
-        if (m.widthPixels == captureWidth && m.heightPixels == captureHeight) return;
-        captureWidth = m.widthPixels;
-        captureHeight = m.heightPixels;
+        int[] orientedSize = getOrientedSize(wm.getDefaultDisplay(), m);
+        int newWidth = orientedSize[0];
+        int newHeight = orientedSize[1];
+        int newRotation = orientedSize[2];
+        if (newWidth == captureWidth &&
+                newHeight == captureHeight &&
+                newRotation == captureRotation) return;
+        captureWidth = newWidth;
+        captureHeight = newHeight;
+        captureRotation = newRotation;
         captureDensityDpi = m.densityDpi;
         ImageReader oldReader = imageReader;
         imageReader = null;
@@ -258,30 +297,51 @@ public class AimCaptureService extends Service {
                 int imageHeight = image.getHeight();
 
                 List<Point> points = getWhitePoints(image);
+                int rawWhiteCount = points.size();
 
-                List<Line> lines = findConnectedLines(
-                        points,
-                        imageWidth,
-                        imageHeight
-                );
+                // A near-100% white mask means the captured buffer is invalid
+                // or its pixel layout is being interpreted incorrectly.
+                // Never run Hough/extension on such a frame.
+                int roiArea =
+                        (imageWidth * 11 / 12 - imageWidth / 12) *
+                        (imageHeight * 9 / 10 - imageHeight / 10);
+                boolean saturatedMask =
+                        roiArea > 0 && rawWhiteCount > roiArea * 0.20;
 
-                // Extend only the strongest long white guide from the cue-ball
-                // end to the estimated inner cushion boundary.
-                float[] extendedGuide = buildExtendedGuide(
-                        lines, points, imageWidth, imageHeight);
+                if (saturatedMask) {
+                    points.clear();
+                }
+
+                List<Line> lines = saturatedMask
+                        ? new ArrayList<>()
+                        : findConnectedLines(points, imageWidth, imageHeight);
+
+                float[] extendedGuide = saturatedMask
+                        ? null
+                        : buildExtendedGuide(
+                                lines, points, imageWidth, imageHeight);
                 sendLines(extendedGuide, imageWidth, imageHeight);
 
                 if (now - lastNotificationTime >= 1500) {
                     lastNotificationTime = now;
 
-                    updateNotification(makeReport(
+                    String report = makeReport(
                             lines,
-                            points.size(),
-                            width,
-                            height,
+                            rawWhiteCount,
+                            imageWidth,
+                            imageHeight,
                             imageWidth,
                             imageHeight
-                    ));
+                    );
+                    report += "\\nRotation: " + captureRotation
+                            + " | Mask: "
+                            + (saturatedMask ? "INVALID" : "OK")
+                            + " | Stride: "
+                            + image.getPlanes()[0].getRowStride()
+                            + "/" + image.getPlanes()[0].getPixelStride()
+                            + " | Pixel: " + samplePixel(image, imageWidth / 2,
+                                    imageHeight / 2);
+                    updateNotification(report);
                 }
 
             } catch (Exception e) {
@@ -296,6 +356,21 @@ public class AimCaptureService extends Service {
 
         }, worker);
         return imageReader;
+    }
+
+    private String samplePixel(Image image, int x, int y) {
+        try {
+            Image.Plane plane = image.getPlanes()[0];
+            ByteBuffer buffer = plane.getBuffer().duplicate();
+            int pos = y * plane.getRowStride() + x * plane.getPixelStride();
+            if (pos < 0 || pos + 3 >= buffer.limit()) return "out";
+            return (buffer.get(pos) & 255) + ","
+                    + (buffer.get(pos + 1) & 255) + ","
+                    + (buffer.get(pos + 2) & 255) + ","
+                    + (buffer.get(pos + 3) & 255);
+        } catch (Exception e) {
+            return "err";
+        }
     }
 
     // Screen pixels are processed in RAM. No screenshot is saved.
