@@ -12,10 +12,11 @@ import android.widget.*;
 import java.text.*;
 import java.util.*;
 import androidx.biometric.BiometricPrompt;
+import androidx.fragment.app.FragmentActivity;
 import androidx.core.content.ContextCompat;
 import java.util.concurrent.Executor;
 
-public class MainActivity extends Activity {
+public class MainActivity extends FragmentActivity {
     private static final String[] CATS={"Kids","Wife","Family","Medicine","Grocery","Transport","Bills","Shopping","Dining","Other"};
     private static final int GREEN=0xFF174F3D, DEEP=0xFF0D3328, GOLD=0xFFE1B45A, MINT=0xFFE5F0E8;
     private DB db; private LinearLayout root,body,nav; private int page=0; private boolean dark=false;
