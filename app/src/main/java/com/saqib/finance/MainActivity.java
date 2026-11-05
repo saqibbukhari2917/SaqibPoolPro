@@ -95,11 +95,22 @@ public class MainActivity extends FragmentActivity {
         LinearLayout total=card(c);total.setBackground(shape(GREEN,18));total.addView(txt("TOTAL SPENT THIS MONTH",10,0xFFD9E9DF,true));totalText=txt("Rs. 0",31,Color.WHITE,true);totalText.setPadding(0,dp(8),0,dp(4));total.addView(totalText);countText=txt("0 expenses recorded",12,0xFFD9E9DF,false);total.addView(countText);
         LinearLayout m=row();Button prev=smallButton("‹"),next=smallButton("›");monthText=txt(monthFmt.format(month.getTime()),15,ink,true);monthText.setGravity(Gravity.CENTER);m.addView(prev,lp(42,38));m.addView(monthText,new LinearLayout.LayoutParams(0,dp(38),1));m.addView(next,lp(42,38));LinearLayout.LayoutParams mp=lp(-1,-2);mp.bottomMargin=dp(12);c.addView(m,mp);
         prev.setOnClickListener(v->{month.add(Calendar.MONTH,-1);showPage(0);});next.setOnClickListener(v->{month.add(Calendar.MONTH,1);showPage(0);});
-        LinearLayout ch=card(c);ch.addView(txt("Spending by category",17,ink,true));Chart chart=new Chart(this);ch.addView(chart,lp(-1,220));loadMonth(chart);
+        LinearLayout topPanels=row();
+        LinearLayout.LayoutParams panelsLp=lp(-1,-2);panelsLp.bottomMargin=dp(13);c.addView(topPanels,panelsLp);
+        LinearLayout graphPanel=col();graphPanel.setPadding(dp(10),dp(13),dp(10),dp(10));graphPanel.setBackground(shape(surface,18));graphPanel.setElevation(dp(2));
+        LinearLayout.LayoutParams graphLp=new LinearLayout.LayoutParams(0,-2,1.08f);graphLp.rightMargin=dp(7);topPanels.addView(graphPanel,graphLp);
+        graphPanel.addView(txt("Spending by category",13,ink,true));Chart chart=new Chart(this);graphPanel.addView(chart,lp(-1,158));
+        LinearLayout historyPanel=col();historyPanel.setPadding(dp(12),dp(13),dp(12),dp(12));historyPanel.setBackground(shape(surface,18));historyPanel.setElevation(dp(2));
+        topPanels.addView(historyPanel,new LinearLayout.LayoutParams(0,-1,0.92f));
+        historyPanel.addView(txt("History",16,ink,true));
+        TextView historyCount=txt("0 records",23,GREEN,true);historyCount.setPadding(0,dp(17),0,dp(3));historyPanel.addView(historyCount);
+        historyPanel.addView(txt("This month",11,muted,false));
+        TextView historyAmount=txt("Rs. 0",15,ink,true);historyAmount.setPadding(0,dp(15),0,dp(14));historyPanel.addView(historyAmount);
+        Button all=primaryButton("View history");historyPanel.addView(all,lp(-1,42));all.setOnClickListener(v->showPage(2));
+        loadMonth(chart,historyCount,historyAmount);
         LinearLayout recent=card(c);recent.addView(txt("Recent expenses",17,ink,true));addRecent(recent,5);
-        Button all=primaryButton("View full history");recent.addView(all,lp(-1,44));all.setOnClickListener(v->showPage(2));
     }
-    private void loadMonth(Chart chart){String key=new SimpleDateFormat("yyyy-MM",Locale.US).format(month.getTime());Map<String,Double> data=new LinkedHashMap<>();double total=0;int count=0;for(String s:CATS)data.put(s,0d);Cursor q=db.getReadableDatabase().rawQuery("SELECT category,SUM(amount),COUNT(*) FROM expenses WHERE substr(date,1,7)=? GROUP BY category",new String[]{key});while(q.moveToNext()){String cat=q.getString(0);double val=q.getDouble(1);data.put(cat,val);total+=val;count+=q.getInt(2);}q.close();totalText.setText(money(total));countText.setText(count+" expense"+(count==1?"":"s")+" recorded");chart.setData(data,total);}
+    private void loadMonth(Chart chart,TextView historyCount,TextView historyAmount){String key=new SimpleDateFormat("yyyy-MM",Locale.US).format(month.getTime());Map<String,Double> data=new LinkedHashMap<>();double total=0;int count=0;for(String s:CATS)data.put(s,0d);Cursor q=db.getReadableDatabase().rawQuery("SELECT category,SUM(amount),COUNT(*) FROM expenses WHERE substr(date,1,7)=? GROUP BY category",new String[]{key});while(q.moveToNext()){String cat=q.getString(0);double val=q.getDouble(1);data.put(cat,val);total+=val;count+=q.getInt(2);}q.close();totalText.setText(money(total));countText.setText(count+" expense"+(count==1?"":"s")+" recorded");historyCount.setText(count+" records");historyAmount.setText(money(total));chart.setData(data,total);}
     private void addRecent(LinearLayout target,int limit){Cursor q=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date FROM expenses ORDER BY date DESC,id DESC LIMIT "+limit,null);if(!q.moveToFirst()){TextView e=txt("No expenses yet. Add your first expense.",13,muted,false);e.setPadding(0,dp(18),0,dp(12));target.addView(e);}else do{String cat=q.getString(0),desc=q.getString(1);LinearLayout r=row();TextView left=txt(cat+(desc.isEmpty()?"":" · "+desc),13,ink,true);r.addView(left,new LinearLayout.LayoutParams(0,-2,1));r.addView(txt(money(q.getDouble(2)),13,GREEN,true));target.addView(r,lp(-1,43));View d=new View(this);d.setBackgroundColor(line);target.addView(d,lp(-1,1));}while(q.moveToNext());q.close();}
     private Button smallButton(String s){Button b=new Button(this);b.setText(s);b.setTextSize(22);b.setTextColor(ink);b.setAllCaps(false);b.setBackground(shape(surface,10));return b;}
     private Button primaryButton(String s){Button b=new Button(this);b.setText(s);b.setTextSize(13);b.setTextColor(Color.WHITE);b.setAllCaps(false);b.setBackground(shape(GREEN,12));return b;}
@@ -257,7 +268,22 @@ public class MainActivity extends FragmentActivity {
     private void markCloudPending(String collection,String id){Set<String> p=pendingCloudSet();p.add(collection+":"+id);getPreferences(0).edit().putStringSet("cloud_pending_records",p).apply();refreshPendingCloudText();}
     private void clearCloudPending(String collection,String id){Set<String> p=pendingCloudSet();p.remove(collection+":"+id);getPreferences(0).edit().putStringSet("cloud_pending_records",p).apply();refreshPendingCloudText();}
     private void refreshPendingCloudText(){runOnUiThread(()->{if(pendingCloudText!=null){int n=pendingCloudCount();pendingCloudText.setText("Pending sync: "+n+" records");pendingCloudText.setTextColor(n>0?GOLD:GREEN);}});}
-    private class Chart extends View{Map<String,Double>data=new LinkedHashMap<>();double total;Paint p=new Paint(3);int[] colors={0xFF2F8065,0xFFE1B45A,0xFF729AC7,0xFFD97878,0xFF9A83C7,0xFF5EAAA5,0xFFB58A67,0xFF82936B,0xFFCF8DB2,0xFF8B9690};Chart(Context c){super(c);}void setData(Map<String,Double>d,double t){data=new LinkedHashMap<>(d);total=t;invalidate();}@Override protected void onDraw(Canvas c){super.onDraw(c);float w=getWidth(),h=getHeight();if(total<=0){p.setColor(muted);p.setTextSize(dp(13));p.setTextAlign(Paint.Align.CENTER);c.drawText("Your category chart will appear here",w/2,h/2,p);return;}float cx=w*.25f,cy=h*.5f,r=Math.min(w*.21f,h*.39f),start=-90;int i=0;for(String cat:CATS){double v=data.get(cat);if(v>0){p.setColor(colors[i]);c.drawArc(cx-r,cy-r,cx+r,cy+r,start,(float)(v/total*360),true,p);start+=(float)(v/total*360);}i++;}p.setColor(surface);c.drawCircle(cx,cy,r*.57f,p);p.setColor(ink);p.setTextAlign(Paint.Align.CENTER);p.setTextSize(dp(9));c.drawText("TOTAL",cx,cy-dp(3),p);p.setTextSize(dp(10));c.drawText(money(total),cx,cy+dp(13),p);float x=w*.49f,y=dp(19);i=0;p.setTextAlign(Paint.Align.LEFT);p.setTextSize(dp(10));for(String cat:CATS){double v=data.get(cat);if(v>0&&y<h-dp(8)){p.setColor(colors[i]);c.drawCircle(x,y-dp(3),dp(4),p);p.setColor(ink);c.drawText(cat+"  "+money(v),x+dp(9),y,p);y+=dp(19);}i++;}}}
+    private class Chart extends View{
+        Map<String,Double>data=new LinkedHashMap<>();double total;Paint p=new Paint(3);
+        int[] colors={0xFF2F8065,0xFFE1B45A,0xFF729AC7,0xFFD97878,0xFF9A83C7,0xFF5EAAA5,0xFFB58A67,0xFF82936B,0xFFCF8DB2,0xFF8B9690};
+        Chart(Context c){super(c);}
+        void setData(Map<String,Double>d,double t){data=new LinkedHashMap<>(d);total=t;invalidate();}
+        @Override protected void onDraw(Canvas c){
+            super.onDraw(c);float w=getWidth(),h=getHeight(),cx=w/2f,cy=h/2f;
+            float r=Math.min(w*.37f,h*.39f),start=-90;int i=0;
+            if(total<=0){p.setColor(muted);p.setTextSize(dp(11));p.setTextAlign(Paint.Align.CENTER);c.drawText("No data yet",cx,cy,p);return;}
+            for(String cat:CATS){double v=data.get(cat);if(v>0){float sweep=(float)(v/total*360);p.setColor(colors[i]);c.drawArc(cx-r,cy-r,cx+r,cy+r,start,sweep,true,p);
+                if(sweep>=24){double mid=Math.toRadians(start+sweep/2);float tx=cx+(float)Math.cos(mid)*r*.72f,ty=cy+(float)Math.sin(mid)*r*.72f;
+                    p.setColor(Color.WHITE);p.setTextAlign(Paint.Align.CENTER);p.setTextSize(dp(9));p.setTypeface(Typeface.create(Typeface.DEFAULT,Typeface.BOLD));c.drawText(Math.round(v/total*100)+"%",tx,ty+dp(3),p);p.setTypeface(Typeface.DEFAULT);}
+                start+=sweep;}i++;}
+            p.setColor(surface);c.drawCircle(cx,cy,r*.57f,p);p.setColor(ink);p.setTextAlign(Paint.Align.CENTER);p.setTextSize(dp(8));c.drawText("TOTAL",cx,cy-dp(3),p);p.setTextSize(dp(9));c.drawText(money(total),cx,cy+dp(11),p);
+        }
+    }
     private void remindersPage(){
         pageHeader("Buy reminders","Never forget what you need to purchase");
         LinearLayout c=content();
