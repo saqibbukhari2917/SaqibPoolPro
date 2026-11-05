@@ -522,10 +522,10 @@ public class AimCaptureService extends Service {
                 (a, b) -> Integer.compare(b.votes, a.votes)
         );
 
-        int peakLimit = Math.min(peaks.size(), 240);
+        int peakLimit = Math.min(peaks.size(), 600);
 
         for (int pi = 0;
-             pi < peakLimit && result.size() < 160;
+             pi < peakLimit && result.size() < 400;
              pi++) {
 
             Peak peak = peaks.get(pi);
