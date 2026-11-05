@@ -15,8 +15,11 @@ import androidx.biometric.BiometricPrompt;
 import androidx.fragment.app.FragmentActivity;
 import androidx.core.content.ContextCompat;
 import java.util.concurrent.Executor;
+import java.io.*;
+import org.json.*;
 
 public class MainActivity extends FragmentActivity {
+    private static final int REQUEST_BACKUP=7101, REQUEST_RESTORE=7102;
     private static final String[] CATS={"Kids","Wife","Family","Medicine","Grocery","Transport","Bills","Shopping","Dining","Other"};
     private static final int GREEN=0xFF174F3D, DEEP=0xFF0D3328, GOLD=0xFFE1B45A, MINT=0xFFE5F0E8;
     private DB db; private LinearLayout root,body,nav; private int page=0; private boolean dark=false;
@@ -101,7 +104,87 @@ public class MainActivity extends FragmentActivity {
     private void pickFilter(boolean start){String old=start?from:to;Calendar c=Calendar.getInstance();try{if(!old.isEmpty())c.setTime(iso.parse(old));}catch(Exception e){}new DatePickerDialog(this,(v,y,m,d)->{Calendar x=Calendar.getInstance();x.set(y,m,d);String value=iso.format(x.getTime());if(start)from=value;else to=value;if(!from.isEmpty()&&!to.isEmpty()&&from.compareTo(to)>0){if(start)to=from;else from=to;}showPage(2);},c.get(Calendar.YEAR),c.get(Calendar.MONTH),c.get(Calendar.DAY_OF_MONTH)).show();}
     private void refreshHistory(){if(historyList==null)return;historyList.removeAllViews();StringBuilder sql=new StringBuilder("SELECT id,category,description,amount,date FROM expenses WHERE 1=1");ArrayList<String>a=new ArrayList<>();if(!from.isEmpty()){sql.append(" AND date>=?");a.add(from);}if(!to.isEmpty()){sql.append(" AND date<=?");a.add(to);}if(!category.equals("All categories")){sql.append(" AND category=?");a.add(category);}sql.append(" ORDER BY date DESC,id DESC");Cursor q=db.getReadableDatabase().rawQuery(sql.toString(),a.toArray(new String[0]));if(!q.moveToFirst()){historyList.addView(txt("No matching expenses found.",14,muted,false));}else do{final long id=q.getLong(0);String cat=q.getString(1),desc=q.getString(2),date=q.getString(4);double amount=q.getDouble(3);LinearLayout r=row();r.setPadding(0,dp(10),0,dp(10));LinearLayout d=col();d.addView(txt(cat,14,ink,true));d.addView(txt((desc.isEmpty()?"":desc+" · ")+dateLabel(date),11,muted,false));r.addView(d,new LinearLayout.LayoutParams(0,-2,1));r.addView(txt(money(amount),14,GREEN,true));r.setOnClickListener(v->editExpense(id,cat,desc,amount,date));historyList.addView(r);View sep=new View(this);sep.setBackgroundColor(line);historyList.addView(sep,lp(-1,1));}while(q.moveToNext());q.close();}
     private void editExpense(long id,String cat,String desc,double value,String date){LinearLayout box=col();Spinner sp=new Spinner(this);sp.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));sp.setSelection(Math.max(0,Arrays.asList(CATS).indexOf(cat)));EditText de=new EditText(this);de.setHint("Description (optional)");de.setText(desc);EditText am=new EditText(this);am.setInputType(8194);am.setText(String.valueOf(value));TextView dt=txt(dateLabel(date),14,ink,true);dt.setPadding(dp(10),dp(12),dp(10),dp(12));dt.setOnClickListener(v->pickDate(dt));box.addView(txt("Category",12,muted,true));box.addView(sp);box.addView(txt("Description (optional)",12,muted,true));box.addView(de);box.addView(txt("Amount (PKR)",12,muted,true));box.addView(am);box.addView(txt("Date",12,muted,true));box.addView(dt);new AlertDialog.Builder(this).setTitle("Edit expense").setView(box).setNegativeButton("Cancel",null).setNeutralButton("Delete",(x,y)->new AlertDialog.Builder(this).setMessage("Delete this expense?").setNegativeButton("Cancel",null).setPositiveButton("Delete",(z,w)->{db.getWritableDatabase().delete("expenses","id=?",new String[]{String.valueOf(id)});refreshHistory();}).show()).setPositiveButton("Save",(x,y)->{try{Date parsed=display.parse(dt.getText().toString());double n=Double.parseDouble(am.getText().toString());if(n<=0)throw new Exception();ContentValues cv=new ContentValues();cv.put("category",sp.getSelectedItem().toString());cv.put("description",de.getText().toString().trim());cv.put("amount",n);cv.put("date",iso.format(parsed));db.getWritableDatabase().update("expenses",cv,"id=?",new String[]{String.valueOf(id)});refreshHistory();}catch(Exception e){Toast.makeText(this,"Please enter a valid amount",Toast.LENGTH_SHORT).show();}}).show();}
-    private void settingsPage(){pageHeader("Settings","Make Saqib Finance feel like yours");LinearLayout c=content();LinearLayout appearance=card(c);appearance.addView(txt("APPEARANCE",10,GOLD,true));appearance.addView(txt("App theme",17,ink,true));appearance.addView(txt("Choose the look that feels comfortable",12,muted,false));Switch sw=new Switch(this);sw.setText("Dark theme");sw.setTextColor(ink);sw.setChecked(dark);sw.setPadding(0,dp(12),0,0);appearance.addView(sw);sw.setOnCheckedChangeListener((b,on)->{dark=on;getPreferences(0).edit().putBoolean("dark",dark).apply();palette();buildShell();showPage(3);});LinearLayout about=card(c);about.addView(txt("ABOUT",10,GOLD,true));about.addView(txt("Saqib Finance",18,ink,true));about.addView(txt("Family expense tracker · Offline storage · PKR",13,muted,false));about.addView(txt("Your expenses are stored locally on this device.",12,muted,false));}
+    private void settingsPage(){
+        pageHeader("Settings","Make Saqib Finance feel like yours");
+        LinearLayout c=content();
+        LinearLayout appearance=card(c);
+        appearance.addView(txt("APPEARANCE",10,GOLD,true));
+        appearance.addView(txt("App theme",17,ink,true));
+        appearance.addView(txt("Choose the look that feels comfortable",12,muted,false));
+        Switch sw=new Switch(this);sw.setText("Dark theme");sw.setTextColor(ink);sw.setChecked(dark);sw.setPadding(0,dp(12),0,0);appearance.addView(sw);
+        sw.setOnCheckedChangeListener((b,on)->{dark=on;getPreferences(0).edit().putBoolean("dark",dark).apply();palette();buildShell();showPage(3);});
+
+        LinearLayout backup=card(c);
+        backup.addView(txt("BACKUP & RESTORE",10,GOLD,true));
+        backup.addView(txt("Keep your family records safe",17,ink,true));
+        TextView help=txt("Save a backup file to Google Drive, then restore it on this or a new phone using the same Google account. Choose Google Drive in the Android file picker.",12,muted,false);
+        help.setPadding(0,dp(5),0,dp(12));backup.addView(help);
+        Button saveBackup=primaryButton("Backup to Google Drive");backup.addView(saveBackup,lp(-1,48));
+        saveBackup.setOnClickListener(v->{
+            Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(Intent.EXTRA_TITLE,"SaqibFinanceBackup.json");
+            startActivityForResult(intent,REQUEST_BACKUP);
+        });
+        Button restore=smallFilter("Restore from Google Drive");
+        LinearLayout.LayoutParams restoreLp=lp(-1,46);restoreLp.topMargin=dp(9);backup.addView(restore,restoreLp);
+        restore.setOnClickListener(v->{
+            Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("*/*");
+            startActivityForResult(intent,REQUEST_RESTORE);
+        });
+        LinearLayout about=card(c);about.addView(txt("ABOUT",10,GOLD,true));about.addView(txt("Saqib Finance",18,ink,true));about.addView(txt("Family expense tracker · Offline storage · PKR",13,muted,false));about.addView(txt("Your expenses are stored locally on this device. Keep a backup in Google Drive before changing or uninstalling your phone.",12,muted,false));
+    }
+    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
+        super.onActivityResult(requestCode,resultCode,data);
+        if(resultCode!=RESULT_OK||data==null||data.getData()==null)return;
+        if(requestCode==REQUEST_BACKUP){
+            try{writeBackup(data.getData());Toast.makeText(this,"Backup saved. Check the selected Drive location.",Toast.LENGTH_LONG).show();}
+            catch(Exception e){Toast.makeText(this,"Backup failed: "+e.getMessage(),Toast.LENGTH_LONG).show();}
+        }else if(requestCode==REQUEST_RESTORE){
+            final android.net.Uri uri=data.getData();
+            new AlertDialog.Builder(this).setTitle("Restore backup?")
+                .setMessage("Restoring will replace the expenses and reminders currently stored on this phone. Continue only if you want to replace this data.")
+                .setNegativeButton("Cancel",null).setPositiveButton("Restore",(d,w)->{
+                    try{readBackup(uri);Toast.makeText(this,"Backup restored successfully.",Toast.LENGTH_LONG).show();showPage(0);}
+                    catch(Exception e){Toast.makeText(this,"Restore failed. The backup file may be invalid.",Toast.LENGTH_LONG).show();}
+                }).show();
+        }
+    }
+    private void writeBackup(android.net.Uri uri)throws Exception{
+        JSONObject rootJson=new JSONObject();rootJson.put("app","Saqib Finance");rootJson.put("version",1);
+        JSONArray expenses=new JSONArray();
+        Cursor e=db.getReadableDatabase().rawQuery("SELECT id,category,description,amount,date FROM expenses ORDER BY id",null);
+        while(e.moveToNext()){JSONObject x=new JSONObject();x.put("id",e.getLong(0));x.put("category",e.getString(1));x.put("description",e.getString(2));x.put("amount",e.getDouble(3));x.put("date",e.getString(4));expenses.put(x);}e.close();
+        JSONArray reminders=new JSONArray();
+        Cursor r=db.getReadableDatabase().rawQuery("SELECT id,item,trigger_at,done,estimated_amount,expense_id FROM reminders ORDER BY id",null);
+        while(r.moveToNext()){JSONObject x=new JSONObject();x.put("id",r.getLong(0));x.put("item",r.getString(1));x.put("trigger_at",r.getLong(2));x.put("done",r.getInt(3));x.put("estimated_amount",r.getDouble(4));if(r.isNull(5))x.put("expense_id",JSONObject.NULL);else x.put("expense_id",r.getLong(5));reminders.put(x);}r.close();
+        rootJson.put("expenses",expenses);rootJson.put("reminders",reminders);
+        try(OutputStream out=getContentResolver().openOutputStream(uri,"wt")){if(out==null)throw new IOException("Could not open backup destination");out.write(rootJson.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));out.flush();}
+    }
+    private void readBackup(android.net.Uri uri)throws Exception{
+        StringBuilder raw=new StringBuilder();
+        try(InputStream in=getContentResolver().openInputStream(uri)){
+            if(in==null)throw new IOException("Could not open backup file");
+            BufferedReader reader=new BufferedReader(new InputStreamReader(in,java.nio.charset.StandardCharsets.UTF_8));String lineText;
+            while((lineText=reader.readLine())!=null)raw.append(lineText);
+        }
+        JSONObject rootJson=new JSONObject(raw.toString());
+        if(!"Saqib Finance".equals(rootJson.optString("app"))||rootJson.optInt("version")!=1)throw new IOException("Unsupported backup file");
+        JSONArray expenses=rootJson.getJSONArray("expenses"),reminders=rootJson.getJSONArray("reminders");
+        SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();
+        try{
+            sql.delete("expenses",null,null);sql.delete("reminders",null,null);
+            for(int i=0;i<expenses.length();i++){JSONObject x=expenses.getJSONObject(i);ContentValues v=new ContentValues();v.put("id",x.getLong("id"));v.put("category",x.getString("category"));v.put("description",x.optString("description",""));v.put("amount",x.getDouble("amount"));v.put("date",x.getString("date"));sql.insertOrThrow("expenses",null,v);}
+            for(int i=0;i<reminders.length();i++){JSONObject x=reminders.getJSONObject(i);ContentValues v=new ContentValues();v.put("id",x.getLong("id"));v.put("item",x.getString("item"));v.put("trigger_at",x.getLong("trigger_at"));v.put("done",x.optInt("done",0));v.put("estimated_amount",x.optDouble("estimated_amount",0));if(x.isNull("expense_id"))v.putNull("expense_id");else v.put("expense_id",x.getLong("expense_id"));sql.insertOrThrow("reminders",null,v);}
+            sql.setTransactionSuccessful();
+        }finally{sql.endTransaction();}
+        Cursor pending=sql.rawQuery("SELECT id,item,trigger_at FROM reminders WHERE done=0 AND trigger_at>?",new String[]{String.valueOf(System.currentTimeMillis())});
+        while(pending.moveToNext())ReminderReceiver.schedule(this,pending.getLong(0),pending.getString(1),pending.getLong(2));
+        pending.close();
+    }
     private class Chart extends View{Map<String,Double>data=new LinkedHashMap<>();double total;Paint p=new Paint(3);int[] colors={0xFF2F8065,0xFFE1B45A,0xFF729AC7,0xFFD97878,0xFF9A83C7,0xFF5EAAA5,0xFFB58A67,0xFF82936B,0xFFCF8DB2,0xFF8B9690};Chart(Context c){super(c);}void setData(Map<String,Double>d,double t){data=new LinkedHashMap<>(d);total=t;invalidate();}@Override protected void onDraw(Canvas c){super.onDraw(c);float w=getWidth(),h=getHeight();if(total<=0){p.setColor(muted);p.setTextSize(dp(13));p.setTextAlign(Paint.Align.CENTER);c.drawText("Your category chart will appear here",w/2,h/2,p);return;}float cx=w*.25f,cy=h*.5f,r=Math.min(w*.21f,h*.39f),start=-90;int i=0;for(String cat:CATS){double v=data.get(cat);if(v>0){p.setColor(colors[i]);c.drawArc(cx-r,cy-r,cx+r,cy+r,start,(float)(v/total*360),true,p);start+=(float)(v/total*360);}i++;}p.setColor(surface);c.drawCircle(cx,cy,r*.57f,p);p.setColor(ink);p.setTextAlign(Paint.Align.CENTER);p.setTextSize(dp(9));c.drawText("TOTAL",cx,cy-dp(3),p);p.setTextSize(dp(10));c.drawText(money(total),cx,cy+dp(13),p);float x=w*.49f,y=dp(19);i=0;p.setTextAlign(Paint.Align.LEFT);p.setTextSize(dp(10));for(String cat:CATS){double v=data.get(cat);if(v>0&&y<h-dp(8)){p.setColor(colors[i]);c.drawCircle(x,y-dp(3),dp(4),p);p.setColor(ink);c.drawText(cat+"  "+money(v),x+dp(9),y,p);y+=dp(19);}i++;}}}
     private void remindersPage(){
         pageHeader("Buy reminders","Never forget what you need to purchase");
