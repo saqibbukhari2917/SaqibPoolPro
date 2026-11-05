@@ -42,7 +42,7 @@ public class MainActivity extends FragmentActivity {
     private int bg,surface,ink,muted,line; private boolean unlocked=false, lockPromptShowing=false, uiReady=false;
     @Override public void onCreate(Bundle b){super.onCreate(b);dark=getPreferences(0).getBoolean("dark",false);db=new DB(this);setupGoogleSignIn();registerCloudNetworkCallback();applyCloudNetworkPreference();if(FirebaseAuth.getInstance().getCurrentUser()!=null)syncAllCloud();palette();if(getPreferences(0).getBoolean("screen_lock",true)){showLockScreen();showSecurityPrompt();}else{unlocked=true;openMainUI(0);}}
     @Override protected void onResume(){super.onResume();if(getPreferences(0).getBoolean("screen_lock",true)&&!unlocked&&!lockPromptShowing){showLockScreen();showSecurityPrompt();}}
-    @Override protected void onStop(){super.onStop();if(!isChangingConfigurations()&&getPreferences(0).getBoolean("screen_lock",true)){unlocked=false;showLockScreen();}}
+    @Override protected void onStop(){super.onStop();if(!isChangingConfigurations()&&getPreferences(0).getBoolean("screen_lock",true)&&getPreferences(0).getBoolean("lock_on_recent_apps",false)){unlocked=false;showLockScreen();}}
     private void openMainUI(int targetPage){uiReady=true;palette();buildShell();showPage(targetPage);}
     private void showLockScreen(){
         LinearLayout lock=col();lock.setGravity(Gravity.CENTER);lock.setBackgroundColor(DEEP);lock.setPadding(dp(28),dp(28),dp(28),dp(28));
@@ -132,6 +132,15 @@ public class MainActivity extends FragmentActivity {
         Switch lockSwitch=new Switch(this);lockSwitch.setText("Screen lock");lockSwitch.setTextColor(ink);lockSwitch.setChecked(getPreferences(0).getBoolean("screen_lock",true));lockSwitch.setPadding(0,dp(12),0,0);security.addView(lockSwitch);
         lockSwitch.setOnCheckedChangeListener((button,on)->{
             getPreferences(0).edit().putBoolean("screen_lock",on).apply();
+            if(on){unlocked=false;showLockScreen();showSecurityPrompt();}
+            else{unlocked=true;lockPromptShowing=false;openMainUI(3);}
+        });
+        Switch recentLockSwitch=new Switch(this);recentLockSwitch.setText("Lock when returning from Recent Apps");recentLockSwitch.setTextColor(ink);recentLockSwitch.setChecked(getPreferences(0).getBoolean("lock_on_recent_apps",false));recentLockSwitch.setPadding(0,dp(12),0,0);recentLockSwitch.setEnabled(getPreferences(0).getBoolean("screen_lock",true));security.addView(recentLockSwitch);
+        security.addView(txt("Off: return to the app without unlocking again. On: ask for fingerprint or phone PIN whenever you leave and reopen the app.",12,muted,false));
+        recentLockSwitch.setOnCheckedChangeListener((button,on)->getPreferences(0).edit().putBoolean("lock_on_recent_apps",on).apply());
+        lockSwitch.setOnCheckedChangeListener((button,on)->{
+            getPreferences(0).edit().putBoolean("screen_lock",on).apply();
+            recentLockSwitch.setEnabled(on);
             if(on){unlocked=false;showLockScreen();showSecurityPrompt();}
             else{unlocked=true;lockPromptShowing=false;openMainUI(3);}
         });
