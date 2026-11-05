@@ -450,7 +450,7 @@ public class AimCaptureService extends Service {
         int peakLimit = Math.min(peaks.size(), 100);
 
         for (int pi = 0;
-             pi < peakLimit && result.size() < 35;
+             pi < peakLimit && result.size() < 80;
              pi++) {
 
             Peak peak = peaks.get(pi);
@@ -572,12 +572,8 @@ public class AimCaptureService extends Service {
                 (a, b) -> Float.compare(b.length(), a.length())
         );
 
-        if (result.size() > 18) {
-            return new ArrayList<>(
-                    result.subList(0, 18)
-            );
-        }
-
+        // Keep short contact-direction candidates. Truncating to the
+        // longest 18 lines discarded the two short post-contact guides.
         return result;
     }
 
@@ -675,15 +671,15 @@ public class AimCaptureService extends Service {
         for (int i = 0; i < lines.size(); i++) {
             Line a = lines.get(i);
             float lenA = a.length();
-            if (lenA < 28f || lenA > 230f) continue;
+            if (lenA < 12f || lenA > 240f) continue;
 
             for (int j = i + 1; j < lines.size(); j++) {
                 Line b = lines.get(j);
                 float lenB = b.length();
-                if (lenB < 28f || lenB > 230f) continue;
+                if (lenB < 12f || lenB > 240f) continue;
 
                 float angle = angleDifference(a.angle(), b.angle());
-                if (angle < 28f || angle > 152f) continue;
+                if (angle < 18f || angle > 88f) continue;
 
                 // Find the closest pair of endpoints. The two short guide
                 // segments should meet at the collision/contact marker.
@@ -698,7 +694,7 @@ public class AimCaptureService extends Service {
                     }
                 }
 
-                if (gap > 34f) continue;
+                if (gap > 26f) continue;
 
                 // Prefer a tight shared endpoint and two clearly visible
                 // short segments, rather than unrelated white table details.
@@ -747,7 +743,7 @@ public class AimCaptureService extends Service {
             }
         }
 
-        if (bestGap > 34f) return null;
+        if (bestGap > 26f) return null;
 
         float left = width * 0.195f;
         float right = width * 0.805f;
