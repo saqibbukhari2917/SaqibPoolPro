@@ -11,6 +11,9 @@ import android.view.*;
 import android.widget.*;
 import java.text.*;
 import java.util.*;
+import androidx.biometric.BiometricPrompt;
+import androidx.core.content.ContextCompat;
+import java.util.concurrent.Executor;
 
 public class MainActivity extends Activity {
     private static final String[] CATS={"Kids","Wife","Family","Medicine","Grocery","Transport","Bills","Shopping","Dining","Other"};
@@ -21,8 +24,26 @@ public class MainActivity extends Activity {
     private final SimpleDateFormat iso=new SimpleDateFormat("yyyy-MM-dd",Locale.US);
     private final SimpleDateFormat display=new SimpleDateFormat("dd MMM yyyy",Locale.ENGLISH);
     private final SimpleDateFormat monthFmt=new SimpleDateFormat("MMMM yyyy",Locale.ENGLISH);
-    private int bg,surface,ink,muted,line;
+    private int bg,surface,ink,muted,line; private boolean unlocked=false, lockPromptShowing=false;
     @Override public void onCreate(Bundle b){super.onCreate(b);dark=getPreferences(0).getBoolean("dark",false);db=new DB(this);palette();buildShell();showPage(0);}
+    @Override protected void onResume(){super.onResume();if(!unlocked&&!lockPromptShowing)showSecurityPrompt();}
+    @Override protected void onStop(){super.onStop();if(!isChangingConfigurations())unlocked=false;}
+    private void showSecurityPrompt(){
+        lockPromptShowing=true;
+        Executor executor=ContextCompat.getMainExecutor(this);
+        BiometricPrompt prompt=new BiometricPrompt(this,executor,new BiometricPrompt.AuthenticationCallback(){
+            @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result){super.onAuthenticationSucceeded(result);unlocked=true;lockPromptShowing=false;}
+            @Override public void onAuthenticationError(int errorCode,CharSequence errString){super.onAuthenticationError(errorCode,errString);lockPromptShowing=false;Toast.makeText(MainActivity.this,"Authentication required to open Saqib Finance",Toast.LENGTH_LONG).show();finish();}
+            @Override public void onAuthenticationFailed(){super.onAuthenticationFailed();Toast.makeText(MainActivity.this,"Not recognized. Try again.",Toast.LENGTH_SHORT).show();}
+        });
+        BiometricPrompt.PromptInfo info=new BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Unlock Saqib Finance")
+            .setSubtitle("Use your fingerprint or your phone's screen lock")
+            .setDescription("Your family expense information is protected")
+            .setDeviceCredentialAllowed(true)
+            .build();
+        prompt.authenticate(info);
+    }
     private void palette(){bg=dark?0xFF101A16:0xFFF5F7F3;surface=dark?0xFF1B2922:Color.WHITE;ink=dark?0xFFF1F4F0:0xFF24352C;muted=dark?0xFFB0BDB4:0xFF78847B;line=dark?0xFF34443A:0xFFE8EDE8;getWindow().setStatusBarColor(DEEP);getWindow().setNavigationBarColor(DEEP);}
     private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
     private GradientDrawable shape(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
