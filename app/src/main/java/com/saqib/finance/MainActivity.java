@@ -17,9 +17,13 @@ import androidx.core.content.ContextCompat;
 import java.util.concurrent.Executor;
 import java.io.*;
 import org.json.*;
+import androidx.work.*;
+import androidx.documentfile.provider.DocumentFile;
+import android.net.Uri;
 
 public class MainActivity extends FragmentActivity {
-    private static final int REQUEST_BACKUP=7101, REQUEST_RESTORE=7102;
+    private static final int REQUEST_BACKUP=7101, REQUEST_RESTORE=7102, REQUEST_BACKUP_FOLDER=7103;
+    private static final String PREF_BACKUP_TREE="backup_tree_uri", PREF_BACKUP_FREQUENCY="backup_frequency";
     private static final String[] CATS={"Kids","Wife","Family","Medicine","Grocery","Transport","Bills","Shopping","Dining","Other"};
     private static final int GREEN=0xFF174F3D, DEEP=0xFF0D3328, GOLD=0xFFE1B45A, MINT=0xFFE5F0E8;
     private DB db; private LinearLayout root,body,nav; private int page=0; private boolean dark=false;
@@ -127,6 +131,19 @@ public class MainActivity extends FragmentActivity {
             intent.putExtra(Intent.EXTRA_TITLE,"SaqibFinanceBackup.json");
             startActivityForResult(intent,REQUEST_BACKUP);
         });
+        TextView autoTitle=txt("AUTOMATIC BACKUP",10,GOLD,true);autoTitle.setPadding(0,dp(18),0,dp(6));backup.addView(autoTitle);
+        backup.addView(txt("Choose how often records should be backed up to the selected Drive folder.",12,muted,false));
+        Spinner frequency=new Spinner(this);
+        String[] frequencyOptions={"Off","Daily","Weekly"};
+        frequency.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,frequencyOptions));
+        String savedFrequency=getPreferences(0).getString(PREF_BACKUP_FREQUENCY,"Off");
+        frequency.setSelection(Math.max(0,Arrays.asList(frequencyOptions).indexOf(savedFrequency)));
+        LinearLayout.LayoutParams frequencyLp=lp(-1,48);frequencyLp.topMargin=dp(5);backup.addView(frequency,frequencyLp);
+        TextView folderStatus=txt(getPreferences(0).getString(PREF_BACKUP_TREE,null)==null?"Google Drive folder: Not selected":"Google Drive folder: Selected",12,muted,false);
+        folderStatus.setPadding(0,dp(5),0,dp(7));backup.addView(folderStatus);
+        Button chooseFolder=smallFilter("Choose Google Drive folder");backup.addView(chooseFolder,lp(-1,44));
+        chooseFolder.setOnClickListener(v->{Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(pick,REQUEST_BACKUP_FOLDER);});
+        frequency.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){boolean first=true;public void onNothingSelected(AdapterView<?> a){}public void onItemSelected(AdapterView<?> a,View v,int pos,long id){if(first){first=false;return;}String choice=frequencyOptions[pos];getPreferences(0).edit().putString(PREF_BACKUP_FREQUENCY,choice).apply();if(!choice.equals("Off")&&getPreferences(0).getString(PREF_BACKUP_TREE,null)==null){frequency.setSelection(0);getPreferences(0).edit().putString(PREF_BACKUP_FREQUENCY,"Off").apply();Toast.makeText(MainActivity.this,"First choose a Google Drive folder.",Toast.LENGTH_LONG).show();return;}scheduleAutomaticBackup(choice);Toast.makeText(MainActivity.this,choice.equals("Off")?"Automatic backup turned off":"Automatic "+choice.toLowerCase()+" backup enabled",Toast.LENGTH_SHORT).show();}});
         Button restore=smallFilter("Restore from Google Drive");
         LinearLayout.LayoutParams restoreLp=lp(-1,46);restoreLp.topMargin=dp(9);backup.addView(restore,restoreLp);
         restore.setOnClickListener(v->{
@@ -140,7 +157,17 @@ public class MainActivity extends FragmentActivity {
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
         super.onActivityResult(requestCode,resultCode,data);
         if(resultCode!=RESULT_OK||data==null||data.getData()==null)return;
-        if(requestCode==REQUEST_BACKUP){
+        if(requestCode==REQUEST_BACKUP_FOLDER){
+            try{
+                int flags=data.getFlags()&(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                getContentResolver().takePersistableUriPermission(data.getData(),flags);
+                getPreferences(0).edit().putString(PREF_BACKUP_TREE,data.getData().toString()).apply();
+                Toast.makeText(this,"Drive folder saved for automatic backups.",Toast.LENGTH_LONG).show();
+                String choice=getPreferences(0).getString(PREF_BACKUP_FREQUENCY,"Off");
+                if(!choice.equals("Off"))scheduleAutomaticBackup(choice);
+                showPage(3);
+            }catch(Exception e){Toast.makeText(this,"Could not save Drive folder permission.",Toast.LENGTH_LONG).show();}
+        }else if(requestCode==REQUEST_BACKUP){
             try{writeBackup(data.getData());Toast.makeText(this,"Backup saved. Check the selected Drive location.",Toast.LENGTH_LONG).show();}
             catch(Exception e){Toast.makeText(this,"Backup failed: "+e.getMessage(),Toast.LENGTH_LONG).show();}
         }else if(requestCode==REQUEST_RESTORE){
@@ -152,6 +179,13 @@ public class MainActivity extends FragmentActivity {
                     catch(Exception e){Toast.makeText(this,"Restore failed. The backup file may be invalid.",Toast.LENGTH_LONG).show();}
                 }).show();
         }
+    }
+    private void scheduleAutomaticBackup(String frequency){
+        WorkManager wm=WorkManager.getInstance(this);
+        if("Off".equals(frequency)){wm.cancelUniqueWork("saqib_finance_auto_backup");return;}
+        long days="Weekly".equals(frequency)?7:1;
+        PeriodicWorkRequest request=new PeriodicWorkRequest.Builder(DriveBackupWorker.class,days,java.util.concurrent.TimeUnit.DAYS).addTag("saqib_finance_backup").build();
+        wm.enqueueUniquePeriodicWork("saqib_finance_auto_backup",ExistingPeriodicWorkPolicy.UPDATE,request);
     }
     private void writeBackup(android.net.Uri uri)throws Exception{
         JSONObject rootJson=new JSONObject();rootJson.put("app","Saqib Finance");rootJson.put("version",1);
