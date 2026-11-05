@@ -152,6 +152,7 @@ public class MainActivity extends FragmentActivity {
         Button connect=primaryButton(email==null?"Connect Google account":"Sync now");cloud.addView(connect,lp(-1,48));
         connect.setOnClickListener(v->{if(FirebaseAuth.getInstance().getCurrentUser()==null)startGoogleSignIn();else syncAllCloud();});
         if(email!=null){Button disconnect=smallFilter("Disconnect Google account");cloud.addView(disconnect,lp(-1,44));disconnect.setOnClickListener(v->{new AlertDialog.Builder(this).setMessage("Disconnect this phone? Your cloud backup remains in your Google account.").setNegativeButton("Cancel",null).setPositiveButton("Disconnect",(d,w)->{FirebaseAuth.getInstance().signOut();googleSignInClient.signOut();showPage(3);}).show();});}
+        if(isAdmin()){Button admin=smallFilter("Admin · User overview");cloud.addView(admin,lp(-1,44));admin.setOnClickListener(v->adminUsersPage());}
         TextView netTitle=txt("BACKUP NETWORK",10,GOLD,true);netTitle.setPadding(0,dp(18),0,dp(5));cloud.addView(netTitle);
         cloud.addView(txt("Changes sync automatically when internet is available. Offline changes wait until connection returns.",12,muted,false));
         Spinner network=new Spinner(this);String[] networkOptions={"Wi-Fi + Mobile Data","Wi-Fi only","Off"};network.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,networkOptions));
@@ -215,6 +216,27 @@ public class MainActivity extends FragmentActivity {
     private void pushExpense(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date FROM expenses WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("category",c.getString(0));m.put("description",c.getString(1));m.put("amount",c.getDouble(2));m.put("date",c.getString(3));c.close();String key=String.valueOf(id);markCloudPending("expenses",key);cloudCollection("expenses").document(key).set(m).addOnSuccessListener(v->clearCloudPending("expenses",key)).addOnFailureListener(e->refreshPendingCloudText());}
     private void pushReminder(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT item,trigger_at,done,estimated_amount,expense_id FROM reminders WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("item",c.getString(0));m.put("trigger_at",c.getLong(1));m.put("done",c.getLong(2));m.put("estimated_amount",c.getDouble(3));m.put("expense_id",c.isNull(4)?null:c.getLong(4));c.close();String key=String.valueOf(id);markCloudPending("reminders",key);cloudCollection("reminders").document(key).set(m).addOnSuccessListener(v->clearCloudPending("reminders",key)).addOnFailureListener(e->refreshPendingCloudText());}
     private void deleteCloudRecord(String collection,long id){if(FirebaseAuth.getInstance().getCurrentUser()!=null){String key=String.valueOf(id);markCloudPending("delete-"+collection,key);cloudCollection(collection).document(key).delete().addOnSuccessListener(v->clearCloudPending("delete-"+collection,key)).addOnFailureListener(e->refreshPendingCloudText());}}
+    private static final String ADMIN_EMAIL="saqibbukhari2917@gmail.com";
+    private boolean isAdmin(){FirebaseUser u=FirebaseAuth.getInstance().getCurrentUser();return u!=null&&ADMIN_EMAIL.equalsIgnoreCase(u.getEmail()==null?"":u.getEmail());}
+    private void adminUsersPage(){
+        if(!isAdmin())return;
+        pageHeader("Admin · User overview","Name, Gmail, storage and last sync only");
+        LinearLayout c=content();LinearLayout card=card(c);
+        card.addView(txt("Privacy: expense and reminder contents are not shown.",12,muted,false));
+        TextView status=txt("Loading user summaries…",13,muted,false);card.addView(status);
+        FirebaseFirestore.getInstance().collectionGroup("adminStats").get().addOnSuccessListener(result->{
+            status.setText(result.isEmpty()?"No user summaries yet":"Users: "+result.size());
+            for(DocumentSnapshot d:result.getDocuments()){
+                String name=d.getString("displayName"),email=d.getString("email");Long bytes=d.getLong("storageBytes");
+                LinearLayout row=col();row.setPadding(0,dp(12),0,dp(12));
+                row.addView(txt(name==null||name.isEmpty()?"Name unavailable":name,15,ink,true));
+                row.addView(txt(email==null?"":email,12,muted,false));
+                row.addView(txt(String.format(Locale.US,"Estimated data: %.2f MB",(bytes==null?0:bytes)/1048576.0),12,GREEN,true));
+                Object ts=d.get("lastSyncAt");String last="Not synced";if(ts instanceof com.google.firebase.Timestamp)last=display.format(((com.google.firebase.Timestamp)ts).toDate());
+                row.addView(txt("Last sync: "+last,11,muted,false));card.addView(row);
+            }
+        }).addOnFailureListener(e->status.setText("Could not load users: "+e.getMessage()));
+    }
     private Set<String> pendingCloudSet(){return new HashSet<>(getPreferences(0).getStringSet("cloud_pending_records",new HashSet<>()));}
     private int pendingCloudCount(){return pendingCloudSet().size();}
     private void markCloudPending(String collection,String id){Set<String> p=pendingCloudSet();p.add(collection+":"+id);getPreferences(0).edit().putStringSet("cloud_pending_records",p).apply();refreshPendingCloudText();}
