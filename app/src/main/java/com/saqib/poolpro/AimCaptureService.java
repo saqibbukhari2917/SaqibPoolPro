@@ -809,80 +809,56 @@ public class AimCaptureService extends Service {
 
         if (lines == null || lines.size() < 2 || points == null) return null;
 
-        /*
-         * Only short post-contact guides are eligible. The long incoming
-         * cue-ball guide is deliberately excluded. A valid pair must:
-         *  - have a shared endpoint close to the contact marker,
-         *  - point in clearly different directions,
-         *  - have visible white-pixel support around the shared marker.
-         */
+        // Find two moderately short white guide segments that meet at
+        // approximately the same point. Do NOT infer the point from ball size
+        // or color; the segment endpoints and their own directions define it.
         Line bestA = null;
         Line bestB = null;
-        float bestScore = Float.POSITIVE_INFINITY;
-        float bestOriginX = 0f;
-        float bestOriginY = 0f;
+        float bestOriginX = 0f, bestOriginY = 0f;
         float bestAOuterX = 0f, bestAOuterY = 0f;
         float bestBOuterX = 0f, bestBOuterY = 0f;
+        float bestScore = Float.POSITIVE_INFINITY;
 
-        // Keep short guide candidates only. Long incoming cue-ball
-        // aiming rays are not post-contact prediction guides.
         List<Line> eligible = new ArrayList<>();
-        for (Line candidate : lines) {
-            float length = candidate.length();
-            // Prediction rays can be short or already extend far from the ball.
-            // The incoming cue line is excluded by the two-endpoints-at-one-ball test.
-            if (length >= 60f && length <= 1000f) eligible.add(candidate);
+        for (Line line : lines) {
+            float len = line.length();
+            // Skip the long incoming cue guide and table markings.
+            if (len >= 38f && len <= 240f) eligible.add(line);
         }
 
         for (int i = 0; i < eligible.size(); i++) {
             Line a = eligible.get(i);
-            float lenA = a.length();
-            if (lenA < 60f || lenA > 1000f) continue;
+            float[][] ae = {{a.x1, a.y1}, {a.x2, a.y2}};
 
             for (int j = i + 1; j < eligible.size(); j++) {
                 Line b = eligible.get(j);
-                float lenB = b.length();
-                if (lenB < 60f || lenB > 1000f) continue;
-
                 float angle = angleDifference(a.angle(), b.angle());
                 if (angle < 25f) continue;
 
-                float[][] ae = {{a.x1, a.y1}, {a.x2, a.y2}};
                 float[][] be = {{b.x1, b.y1}, {b.x2, b.y2}};
-
                 for (int ai = 0; ai < 2; ai++) {
                     for (int bi = 0; bi < 2; bi++) {
                         float ax = ae[ai][0], ay = ae[ai][1];
                         float bx = be[bi][0], by = be[bi][1];
                         float gap = (float) Math.hypot(ax - bx, ay - by);
 
-                        // The two guide segments usually stop at opposite
-                        // edges of the colored contact ball, not at one
-                        // identical pixel. Allow a ball-sized gap; this is
-                        // independent of screen position and shot direction.
-                        if (gap < 18f || gap > 58f) continue;
+                        // The two white segments should meet or nearly meet.
+                        // No ball-diameter / ball-color assumption is used.
+                        if (gap > 28f) continue;
 
                         float ox = (ax + bx) * 0.5f;
                         float oy = (ay + by) * 0.5f;
-
-                        // The two white guide fragments must meet across
-                        // the colored object ball, not at the cue reticle.
-                        if (!isColoredBallAt(image, ox, oy)) continue;
+                        int support = whitePointsNear(points, ox, oy);
 
                         int ao = 1 - ai;
                         int bo = 1 - bi;
                         float aOuterX = ae[ao][0], aOuterY = ae[ao][1];
                         float bOuterX = be[bo][0], bOuterY = be[bo][1];
 
-                        // Prefer endpoints whose midpoint is surrounded by
-                        // visible guide/ball-edge pixels, but don't require
-                        // a white center: the ball itself is colored.
-                        int markerSupport = whitePointsNear(points, ox, oy);
-
-                        float score = Math.abs(gap - 34f) * 1.5f
-                                - markerSupport * 0.15f
-                                - Math.min(a.votes, b.votes) * 0.015f
-                                + Math.abs(lenA - lenB) * 0.02f;
+                        float score = gap * 2.0f
+                                + Math.abs(a.length() - b.length()) * 0.015f
+                                - support * 0.35f
+                                - Math.min(a.votes, b.votes) * 0.01f;
 
                         if (score < bestScore) {
                             bestScore = score;
@@ -890,7 +866,6 @@ public class AimCaptureService extends Service {
                             bestB = b;
                             bestOriginX = ox;
                             bestOriginY = oy;
-
                             bestAOuterX = aOuterX;
                             bestAOuterY = aOuterY;
                             bestBOuterX = bOuterX;
@@ -902,9 +877,6 @@ public class AimCaptureService extends Service {
         }
 
         if (bestA == null || bestB == null) return null;
-
-        // Reject nearly parallel/duplicate segments even if Hough produced
-        // slightly different endpoints for the same physical guide.
         if (angleDifference(bestA.angle(), bestB.angle()) < 25f) return null;
 
         float left = width * 0.195f;
@@ -912,8 +884,6 @@ public class AimCaptureService extends Service {
         float top = height * 0.237f;
         float bottom = height * 0.914f;
 
-        // Extend each detected short guide from the shared contact marker
-        // along its own detected direction, never from the cue-ball line.
         return TableGeometry.extendTwoLinesFromOrigins(
                 bestOriginX, bestOriginY,
                 bestAOuterX - bestOriginX, bestAOuterY - bestOriginY,
