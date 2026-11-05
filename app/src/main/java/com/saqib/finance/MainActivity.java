@@ -87,40 +87,50 @@ public class MainActivity extends FragmentActivity {
         String[] labels={"Home","Add","History","Settings","Reminders"};String[] icons={"⌂","+","▤","⚙","◷"};
         for(int i=0;i<5;i++){final int index=i;LinearLayout item=col();item.setGravity(Gravity.CENTER);TextView ic=txt(icons[i],22,i==p?GOLD:0xFFD0DED5,true);ic.setGravity(Gravity.CENTER);TextView label=txt(labels[i],10,i==p?Color.WHITE:0xFFB5C8BD,i==p);label.setGravity(Gravity.CENTER);item.addView(ic);item.addView(label);item.setOnClickListener(v->showPage(index));nav.addView(item,new LinearLayout.LayoutParams(0,-1,1));}
     }
-    private void pageHeader(String title,String sub){LinearLayout h=col();h.setPadding(dp(20),dp(22),dp(20),dp(20));h.setBackground(shape(DEEP,0));LinearLayout brand=row();ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.ic_launcher);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);logo.setContentDescription("Saqib Finance calculator logo");brand.addView(logo,lp(52,52));LinearLayout names=col();names.setPadding(dp(11),0,0,0);names.addView(txt("SAQIB FINANCE",18,Color.WHITE,true));names.addView(txt("YOUR FAMILY WALLET",9,0xFFBDD2C4,true));brand.addView(names);h.addView(brand);TextView titleView=txt(title,23,Color.WHITE,true);titleView.setPadding(0,dp(22),0,dp(3));h.addView(titleView);h.addView(txt(sub,12,0xFFBDD2C4,false));body.addView(h);}
+    private void pageHeader(String title,String sub){LinearLayout h=col();h.setPadding(dp(18),dp(17),dp(18),dp(18));GradientDrawable gd=new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xFF087A3E,0xFF00452D,0xFF003522});gd.setCornerRadii(new float[]{0,0,0,0,dp(24),dp(24),dp(24),dp(24)});h.setBackground(gd);LinearLayout brand=row();ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.ic_launcher);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);logo.setContentDescription("Saqib Finance calculator logo");brand.addView(logo,lp(66,66));LinearLayout names=col();names.setPadding(dp(10),0,0,0);names.addView(txt("Saqib",30,Color.WHITE,true));names.addView(txt("Finance",29,0xFFFFD52A,true));names.addView(txt("Track · Manage · Save",11,0xFFE7F4EA,true));brand.addView(names,new LinearLayout.LayoutParams(0,-2,1));TextView gear=txt("⚙",27,Color.WHITE,true);gear.setGravity(Gravity.CENTER);gear.setOnClickListener(v->showPage(3));brand.addView(gear,lp(42,52));if(!title.equals("Home")){TextView titleView=txt(title,19,Color.WHITE,true);titleView.setPadding(0,dp(13),0,dp(2));h.addView(titleView);h.addView(txt(sub,11,0xFFBDD2C4,false));}body.addView(h);}
     private LinearLayout content(){LinearLayout c=col();c.setPadding(dp(17),dp(17),dp(17),0);body.addView(c);return c;}
     private LinearLayout card(LinearLayout parent){LinearLayout c=col();c.setPadding(dp(16),dp(15),dp(16),dp(15));c.setBackground(shape(surface,18));c.setElevation(dp(2));LinearLayout.LayoutParams q=lp(-1,-2);q.bottomMargin=dp(13);parent.addView(c,q);return c;}
     private void homePage(){
-        pageHeader("Your money, in control","A clear view of your family's monthly spending");LinearLayout c=content();
-        LinearLayout m=row();Button prev=smallButton("‹"),next=smallButton("›");monthText=txt(monthFmt.format(month.getTime()),15,ink,true);monthText.setGravity(Gravity.CENTER);m.addView(prev,lp(42,38));m.addView(monthText,new LinearLayout.LayoutParams(0,dp(38),1));m.addView(next,lp(42,38));LinearLayout.LayoutParams mp=lp(-1,-2);mp.bottomMargin=dp(12);c.addView(m,mp);
+        pageHeader("Home","Track · Manage · Save");
+        LinearLayout c=content();
+        LinearLayout monthRow=row();monthRow.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        Button prev=smallButton("‹"),next=smallButton("›");
+        monthText=txt(monthFmt.format(month.getTime()),13,ink,true);monthText.setGravity(Gravity.CENTER);
+        monthRow.addView(prev,lp(34,34));monthRow.addView(monthText,lp(112,34));monthRow.addView(next,lp(34,34));
+        LinearLayout.LayoutParams mr=lp(-1,-2);mr.bottomMargin=dp(10);c.addView(monthRow,mr);
         prev.setOnClickListener(v->{month.add(Calendar.MONTH,-1);showPage(0);});next.setOnClickListener(v->{month.add(Calendar.MONTH,1);showPage(0);});
-        LinearLayout topPanels=row();LinearLayout.LayoutParams panelsLp=lp(-1,-2);panelsLp.bottomMargin=dp(13);c.addView(topPanels,panelsLp);
-        LinearLayout graphPanel=col();graphPanel.setPadding(dp(9),dp(12),dp(9),dp(9));graphPanel.setBackground(shape(surface,18));graphPanel.setElevation(dp(2));
-        LinearLayout.LayoutParams graphLp=new LinearLayout.LayoutParams(0,-2,1.08f);graphLp.rightMargin=dp(7);topPanels.addView(graphPanel,graphLp);
-        graphPanel.addView(txt("Spending by category",13,ink,true));Chart chart=new Chart(this);graphPanel.addView(chart,lp(-1,158));
-        LinearLayout historyPanel=col();historyPanel.setPadding(dp(12),dp(13),dp(12),dp(12));historyPanel.setBackground(shape(surface,18));historyPanel.setElevation(dp(2));topPanels.addView(historyPanel,new LinearLayout.LayoutParams(0,-1,0.92f));
-        historyPanel.addView(txt("History",16,ink,true));TextView historyCount=txt("0 records",23,GREEN,true);historyCount.setPadding(0,dp(17),0,dp(3));historyPanel.addView(historyCount);
-        historyPanel.addView(txt("This month",11,muted,false));TextView historyAmount=txt("Rs. 0",15,ink,true);historyAmount.setPadding(0,dp(15),0,dp(14));historyPanel.addView(historyAmount);
-        Button all=primaryButton("View history");historyPanel.addView(all,lp(-1,42));all.setOnClickListener(v->showPage(2));
-        LinearLayout total=card(c);total.setBackground(shape(GREEN,18));total.addView(txt("TOTAL SPENT THIS MONTH",10,0xFFD9E9DF,true));totalText=txt("Rs. 0",29,Color.WHITE,true);totalText.setPadding(0,dp(7),0,dp(3));total.addView(totalText);countText=txt("0 expenses recorded",12,0xFFD9E9DF,false);total.addView(countText);
-        LinearLayout categories=col();LinearLayout.LayoutParams catHeadLp=lp(-1,-2);catHeadLp.bottomMargin=dp(10);c.addView(categories,catHeadLp);
-        TextView catTitle=txt("Your categories",18,ink,true);categories.addView(catTitle);TextView catSub=txt("Choose a category to add an expense",11,muted,false);categories.addView(catSub);
+        LinearLayout totals=row();LinearLayout.LayoutParams tlp=lp(-1,-2);tlp.bottomMargin=dp(13);c.addView(totals,tlp);
+        LinearLayout spent=col();spent.setPadding(dp(13),dp(13),dp(10),dp(13));spent.setBackground(shape(surface,18));spent.setElevation(dp(3));LinearLayout.LayoutParams slp=new LinearLayout.LayoutParams(0,dp(94),1);slp.rightMargin=dp(6);totals.addView(spent,slp);
+        LinearLayout spentTop=row();spentTop.addView(txt("👛",23,GREEN,true));TextView spentLabel=txt("Total Expenses",12,ink,true);spentLabel.setPadding(dp(7),0,0,0);spentTop.addView(spentLabel);spent.addView(spentTop);
+        totalText=txt("Rs. 0",20,ink,true);totalText.setPadding(dp(2),dp(5),0,0);spent.addView(totalText);
+        LinearLayout balance=col();balance.setPadding(dp(13),dp(13),dp(10),dp(13));balance.setBackground(shape(surface,18));balance.setElevation(dp(3));totals.addView(balance,new LinearLayout.LayoutParams(0,dp(94),1));
+        balance.addView(txt("🪙  Balance",12,ink,true));TextView balanceValue=txt("Rs. 0",20,GREEN,true);balanceValue.setPadding(dp(2),dp(5),0,0);balance.addView(balanceValue);
+        countText=txt("0 expenses recorded",10,muted,false);countText.setPadding(dp(2),dp(2),0,0);spent.addView(countText);
+        LinearLayout categories=col();LinearLayout.LayoutParams catLp=lp(-1,-2);catLp.bottomMargin=dp(13);c.addView(categories,catLp);
         addCategoryGrid(categories);
+        LinearLayout overview=card(c);overview.addView(txt("▥  Monthly Overview",17,ink,true));
+        LinearLayout panels=row();overview.addView(panels,lp(-1,-2));
+        LinearLayout graphPanel=col();graphPanel.setPadding(dp(4),dp(8),dp(4),dp(4));panels.addView(graphPanel,new LinearLayout.LayoutParams(0,-2,1));
+        Chart chart=new Chart(this);graphPanel.addView(chart,lp(-1,160));
+        LinearLayout stats=col();stats.setPadding(dp(8),dp(8),dp(5),dp(5));panels.addView(stats,new LinearLayout.LayoutParams(0,-2,1));
+        TextView historyCount=txt("0 records",16,ink,true);stats.addView(historyCount);stats.addView(txt("This month",10,muted,false));
+        TextView historyAmount=txt("Rs. 0",17,GREEN,true);historyAmount.setPadding(0,dp(8),0,dp(8));stats.addView(historyAmount);
+        Button view=primaryButton("View history");stats.addView(view,lp(-1,38));view.setOnClickListener(v->showPage(2));
         loadMonth(chart,historyCount,historyAmount);
-        LinearLayout recent=card(c);recent.addView(txt("Recent expenses",17,ink,true));addRecent(recent,5);
+        LinearLayout recent=card(c);LinearLayout recentHead=row();recentHead.addView(txt("◷  Recent Expenses",16,ink,true),new LinearLayout.LayoutParams(0,-2,1));TextView all=txt("View All  →",12,GREEN,true);recentHead.addView(all);all.setOnClickListener(v->showPage(2));recent.addView(recentHead);addRecent(recent,5);
     }
     private void loadMonth(Chart chart,TextView historyCount,TextView historyAmount){String key=new SimpleDateFormat("yyyy-MM",Locale.US).format(month.getTime());Map<String,Double> data=new LinkedHashMap<>();double total=0;int count=0;for(String s:CATS)data.put(s,0d);Cursor q=db.getReadableDatabase().rawQuery("SELECT category,SUM(amount),COUNT(*) FROM expenses WHERE substr(date,1,7)=? GROUP BY category",new String[]{key});while(q.moveToNext()){String cat=q.getString(0);double val=q.getDouble(1);data.put(cat,val);total+=val;count+=q.getInt(2);}q.close();totalText.setText(money(total));countText.setText(count+" expense"+(count==1?"":"s")+" recorded");historyCount.setText(count+" records");historyAmount.setText(money(total));chart.setData(data,total);}
     private void addCategoryGrid(LinearLayout parent){
         String[] icons={"🧒","💍","👨‍👩‍👧","💊","🛒","🏍️","🧾","🛍️","🍽️","📦"};
-        int[] tints={0xFFEAF2FF,0xFFFFEEF2,0xFFEAF5EE,0xFFFFF0E5,0xFFFFF5DF,0xFFE5F5F3,0xFFF0ECFA,0xFFFFEDE5,0xFFFCEAF3,0xFFECEFF1};
-        for(int i=0;i<CATS.length;i+=2){
-            LinearLayout lineRow=row();LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(9);parent.addView(lineRow,rowLp);
-            for(int j=i;j<Math.min(i+2,CATS.length);j++){
+        int[] tints={0xFFB8D9F8,0xFFF4B8D4,0xFFFFD99A,0xFFB9F0D0,0xFFDCC5F4,0xFFBDEBEA,0xFFB8D9F8,0xFFF4B8D4,0xFFC8EDB6,0xFFDCC5F4};
+        for(int i=0;i<CATS.length;i+=4){
+            LinearLayout lineRow=row();LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(8);parent.addView(lineRow,rowLp);
+            for(int j=i;j<Math.min(i+4,CATS.length);j++){
                 final String cat=CATS[j];final int idx=j;
-                LinearLayout tile=col();tile.setPadding(dp(12),dp(12),dp(10),dp(12));tile.setBackground(shape(surface,16));tile.setElevation(dp(1));
-                LinearLayout.LayoutParams tileLp=new LinearLayout.LayoutParams(0,dp(91),1);if(j==i)tileLp.rightMargin=dp(8);lineRow.addView(tile,tileLp);
-                TextView symbol=txt(icons[idx],23,ink,true);symbol.setGravity(Gravity.CENTER);symbol.setBackground(shape(tints[idx],14));tile.addView(symbol,lp(39,39));
-                TextView label=txt(cat,13,ink,true);label.setPadding(0,dp(7),0,0);tile.addView(label);
+                LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(3),dp(8),dp(3),dp(7));tile.setBackground(shape(tints[idx],19));tile.setElevation(dp(1));
+                LinearLayout.LayoutParams tileLp=new LinearLayout.LayoutParams(0,dp(83),1);if(j>i)tileLp.leftMargin=dp(5);lineRow.addView(tile,tileLp);
+                TextView symbol=txt(icons[idx],25,ink,true);symbol.setGravity(Gravity.CENTER);tile.addView(symbol,lp(-1,39));
+                TextView label=txt(cat,11,Color.BLACK,true);label.setGravity(Gravity.CENTER);label.setSingleLine(true);label.setPadding(0,dp(3),0,0);tile.addView(label);
                 tile.setOnClickListener(v->{selectedAddCategory=cat;showPage(1);});
             }
         }
