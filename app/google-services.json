@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "739730141232-thedoroliksnbpjo34jkl130a594v75d.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.saqib.finance",
+            "certificate_hash": "e2671cfdb25ce27d177955054ea3c686b995cef2"
+          }
+        },
+        {
           "client_id": "739730141232-sfkl5le3qi5re5fvpc5bv8hfk69q1g5l.apps.googleusercontent.com",
           "client_type": 3
         }
