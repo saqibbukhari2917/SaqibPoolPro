@@ -761,13 +761,41 @@ public class AimCaptureService extends Service {
         float bestAOuterX = 0f, bestAOuterY = 0f;
         float bestBOuterX = 0f, bestBOuterY = 0f;
 
-        for (int i = 0; i < lines.size(); i++) {
-            Line a = lines.get(i);
+        // The live aiming reticle is a multi-spoke graphic: several
+        // detected segments terminate at the same small center. Real
+        // post-contact prediction guides form a pair, not a 3+ ray hub.
+        // Mark endpoints shared by at least three distinct segments and
+        // exclude those reticle segments before trying to pair collision
+        // guides. This uses only frame geometry, never fixed screen sides.
+        List<Line> eligible = new ArrayList<>();
+        for (Line candidate : lines) {
+            int hubMatches = 0;
+            float[][] ends = {
+                    {candidate.x1, candidate.y1},
+                    {candidate.x2, candidate.y2}
+            };
+            for (float[] end : ends) {
+                int nearbySegments = 0;
+                for (Line other : lines) {
+                    if (other == candidate) continue;
+                    float d1 = (float) Math.hypot(end[0] - other.x1,
+                            end[1] - other.y1);
+                    float d2 = (float) Math.hypot(end[0] - other.x2,
+                            end[1] - other.y2);
+                    if (Math.min(d1, d2) <= 20f) nearbySegments++;
+                }
+                if (nearbySegments >= 2) hubMatches++;
+            }
+            if (hubMatches == 0) eligible.add(candidate);
+        }
+
+        for (int i = 0; i < eligible.size(); i++) {
+            Line a = eligible.get(i);
             float lenA = a.length();
             if (lenA < 14f || lenA > 190f) continue;
 
-            for (int j = i + 1; j < lines.size(); j++) {
-                Line b = lines.get(j);
+            for (int j = i + 1; j < eligible.size(); j++) {
+                Line b = eligible.get(j);
                 float lenB = b.length();
                 if (lenB < 14f || lenB > 190f) continue;
 
