@@ -35,7 +35,7 @@ public class MainActivity extends FragmentActivity {
     private static final int GREEN=0xFF245B45, DEEP=0xFF123B2D, GOLD=0xFFE3B65C, MINT=0xFFEAF1E8;
     private DB db; private LinearLayout root,body,nav; private int page=0; private boolean dark=false;
     private Calendar month=Calendar.getInstance(); private String from="",to="",category="All categories",selectedAddCategory="Grocery";
-    private TextView totalText,countText,monthText,pendingCloudText; private LinearLayout historyList;
+    private TextView totalText,countText,monthText,pendingCloudText,recordTotalText; private LinearLayout historyList;
     private final SimpleDateFormat iso=new SimpleDateFormat("yyyy-MM-dd",Locale.US);
     private final SimpleDateFormat display=new SimpleDateFormat("dd MMM yyyy",Locale.ENGLISH);
     private final SimpleDateFormat monthFmt=new SimpleDateFormat("MMMM yyyy",Locale.ENGLISH);
@@ -104,7 +104,7 @@ public class MainActivity extends FragmentActivity {
         LinearLayout spentTop=row();spentTop.addView(txt("👛",23,GREEN,true));TextView spentLabel=txt("Total Expenses",12,ink,true);spentLabel.setPadding(dp(7),0,0,0);spentTop.addView(spentLabel);spent.addView(spentTop);
         totalText=txt("Rs. 0",20,ink,true);totalText.setPadding(dp(2),dp(5),0,0);spent.addView(totalText);
         LinearLayout balance=col();balance.setPadding(dp(13),dp(13),dp(10),dp(13));balance.setBackground(shape(surface,18));balance.setElevation(dp(3));totals.addView(balance,new LinearLayout.LayoutParams(0,dp(94),1));
-        balance.addView(txt("🪙  Balance",12,ink,true));TextView balanceValue=txt("Rs. 0",20,GREEN,true);balanceValue.setPadding(dp(2),dp(5),0,0);balance.addView(balanceValue);
+        balance.addView(txt("▤  Monthly Records",12,ink,true));recordTotalText=txt("0",20,GREEN,true);recordTotalText.setPadding(dp(2),dp(5),0,0);balance.addView(recordTotalText);
         countText=txt("0 expenses recorded",10,muted,false);countText.setPadding(dp(2),dp(2),0,0);spent.addView(countText);
         LinearLayout categories=col();LinearLayout.LayoutParams catLp=lp(-1,-2);catLp.bottomMargin=dp(13);c.addView(categories,catLp);
         addCategoryGrid(categories);
@@ -119,7 +119,7 @@ public class MainActivity extends FragmentActivity {
         loadMonth(chart,historyCount,historyAmount);
         LinearLayout recent=card(c);LinearLayout recentHead=row();recentHead.addView(txt("◷  Recent Expenses",16,ink,true),new LinearLayout.LayoutParams(0,-2,1));TextView all=txt("View All  →",12,GREEN,true);recentHead.addView(all);all.setOnClickListener(v->showPage(2));recent.addView(recentHead);addRecent(recent,5);
     }
-    private void loadMonth(Chart chart,TextView historyCount,TextView historyAmount){String key=new SimpleDateFormat("yyyy-MM",Locale.US).format(month.getTime());Map<String,Double> data=new LinkedHashMap<>();double total=0;int count=0;for(String s:CATS)data.put(s,0d);Cursor q=db.getReadableDatabase().rawQuery("SELECT category,SUM(amount),COUNT(*) FROM expenses WHERE substr(date,1,7)=? GROUP BY category",new String[]{key});while(q.moveToNext()){String cat=q.getString(0);double val=q.getDouble(1);data.put(cat,val);total+=val;count+=q.getInt(2);}q.close();totalText.setText(money(total));countText.setText(count+" expense"+(count==1?"":"s")+" recorded");historyCount.setText(count+" records");historyAmount.setText(money(total));chart.setData(data,total);}
+    private void loadMonth(Chart chart,TextView historyCount,TextView historyAmount){String key=new SimpleDateFormat("yyyy-MM",Locale.US).format(month.getTime());Map<String,Double> data=new LinkedHashMap<>();double total=0;int count=0;for(String s:CATS)data.put(s,0d);Cursor q=db.getReadableDatabase().rawQuery("SELECT category,SUM(amount),COUNT(*) FROM expenses WHERE substr(date,1,7)=? GROUP BY category",new String[]{key});while(q.moveToNext()){String cat=q.getString(0);double val=q.getDouble(1);data.put(cat,val);total+=val;count+=q.getInt(2);}q.close();totalText.setText(money(total));countText.setText(count+" expense"+(count==1?"":"s")+" recorded");historyCount.setText(count+" records");historyAmount.setText(money(total));if(recordTotalText!=null)recordTotalText.setText(String.valueOf(count));chart.setData(data,total);}
     private void addCategoryGrid(LinearLayout parent){
         String[] icons={"🧒","💍","👨‍👩‍👧","💊","🛒","🏍️","🧾","🛍️","🍽️","📦"};
         int[] tints={0xFFB8D9F8,0xFFF4B8D4,0xFFFFD99A,0xFFB9F0D0,0xFFDCC5F4,0xFFBDEBEA,0xFFB8D9F8,0xFFF4B8D4,0xFFC8EDB6,0xFFDCC5F4};
