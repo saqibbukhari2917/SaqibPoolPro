@@ -34,7 +34,7 @@ public class MainActivity extends FragmentActivity {
     private static final String[] CATS={"Kids","Wife","Family","Medicine","Grocery","Transport","Bills","Shopping","Dining","Other"};
     private static final int GREEN=0xFF174F3D, DEEP=0xFF0D3328, GOLD=0xFFE1B45A, MINT=0xFFE5F0E8;
     private DB db; private LinearLayout root,body,nav; private int page=0; private boolean dark=false;
-    private Calendar month=Calendar.getInstance(); private String from="",to="",category="All categories";
+    private Calendar month=Calendar.getInstance(); private String from="",to="",category="All categories",selectedAddCategory="Grocery";
     private TextView totalText,countText,monthText,pendingCloudText; private LinearLayout historyList;
     private final SimpleDateFormat iso=new SimpleDateFormat("yyyy-MM-dd",Locale.US);
     private final SimpleDateFormat display=new SimpleDateFormat("dd MMM yyyy",Locale.ENGLISH);
@@ -92,34 +92,48 @@ public class MainActivity extends FragmentActivity {
     private LinearLayout card(LinearLayout parent){LinearLayout c=col();c.setPadding(dp(16),dp(15),dp(16),dp(15));c.setBackground(shape(surface,18));c.setElevation(dp(2));LinearLayout.LayoutParams q=lp(-1,-2);q.bottomMargin=dp(13);parent.addView(c,q);return c;}
     private void homePage(){
         pageHeader("Your money, in control","A clear view of your family's monthly spending");LinearLayout c=content();
-        LinearLayout total=card(c);total.setBackground(shape(GREEN,18));total.addView(txt("TOTAL SPENT THIS MONTH",10,0xFFD9E9DF,true));totalText=txt("Rs. 0",31,Color.WHITE,true);totalText.setPadding(0,dp(8),0,dp(4));total.addView(totalText);countText=txt("0 expenses recorded",12,0xFFD9E9DF,false);total.addView(countText);
         LinearLayout m=row();Button prev=smallButton("‹"),next=smallButton("›");monthText=txt(monthFmt.format(month.getTime()),15,ink,true);monthText.setGravity(Gravity.CENTER);m.addView(prev,lp(42,38));m.addView(monthText,new LinearLayout.LayoutParams(0,dp(38),1));m.addView(next,lp(42,38));LinearLayout.LayoutParams mp=lp(-1,-2);mp.bottomMargin=dp(12);c.addView(m,mp);
         prev.setOnClickListener(v->{month.add(Calendar.MONTH,-1);showPage(0);});next.setOnClickListener(v->{month.add(Calendar.MONTH,1);showPage(0);});
-        LinearLayout topPanels=row();
-        LinearLayout.LayoutParams panelsLp=lp(-1,-2);panelsLp.bottomMargin=dp(13);c.addView(topPanels,panelsLp);
-        LinearLayout graphPanel=col();graphPanel.setPadding(dp(10),dp(13),dp(10),dp(10));graphPanel.setBackground(shape(surface,18));graphPanel.setElevation(dp(2));
+        LinearLayout topPanels=row();LinearLayout.LayoutParams panelsLp=lp(-1,-2);panelsLp.bottomMargin=dp(13);c.addView(topPanels,panelsLp);
+        LinearLayout graphPanel=col();graphPanel.setPadding(dp(9),dp(12),dp(9),dp(9));graphPanel.setBackground(shape(surface,18));graphPanel.setElevation(dp(2));
         LinearLayout.LayoutParams graphLp=new LinearLayout.LayoutParams(0,-2,1.08f);graphLp.rightMargin=dp(7);topPanels.addView(graphPanel,graphLp);
         graphPanel.addView(txt("Spending by category",13,ink,true));Chart chart=new Chart(this);graphPanel.addView(chart,lp(-1,158));
-        LinearLayout historyPanel=col();historyPanel.setPadding(dp(12),dp(13),dp(12),dp(12));historyPanel.setBackground(shape(surface,18));historyPanel.setElevation(dp(2));
-        topPanels.addView(historyPanel,new LinearLayout.LayoutParams(0,-1,0.92f));
-        historyPanel.addView(txt("History",16,ink,true));
-        TextView historyCount=txt("0 records",23,GREEN,true);historyCount.setPadding(0,dp(17),0,dp(3));historyPanel.addView(historyCount);
-        historyPanel.addView(txt("This month",11,muted,false));
-        TextView historyAmount=txt("Rs. 0",15,ink,true);historyAmount.setPadding(0,dp(15),0,dp(14));historyPanel.addView(historyAmount);
+        LinearLayout historyPanel=col();historyPanel.setPadding(dp(12),dp(13),dp(12),dp(12));historyPanel.setBackground(shape(surface,18));historyPanel.setElevation(dp(2));topPanels.addView(historyPanel,new LinearLayout.LayoutParams(0,-1,0.92f));
+        historyPanel.addView(txt("History",16,ink,true));TextView historyCount=txt("0 records",23,GREEN,true);historyCount.setPadding(0,dp(17),0,dp(3));historyPanel.addView(historyCount);
+        historyPanel.addView(txt("This month",11,muted,false));TextView historyAmount=txt("Rs. 0",15,ink,true);historyAmount.setPadding(0,dp(15),0,dp(14));historyPanel.addView(historyAmount);
         Button all=primaryButton("View history");historyPanel.addView(all,lp(-1,42));all.setOnClickListener(v->showPage(2));
+        LinearLayout total=card(c);total.setBackground(shape(GREEN,18));total.addView(txt("TOTAL SPENT THIS MONTH",10,0xFFD9E9DF,true));totalText=txt("Rs. 0",29,Color.WHITE,true);totalText.setPadding(0,dp(7),0,dp(3));total.addView(totalText);countText=txt("0 expenses recorded",12,0xFFD9E9DF,false);total.addView(countText);
+        LinearLayout categories=col();LinearLayout.LayoutParams catHeadLp=lp(-1,-2);catHeadLp.bottomMargin=dp(10);c.addView(categories,catHeadLp);
+        TextView catTitle=txt("Your categories",18,ink,true);categories.addView(catTitle);TextView catSub=txt("Choose a category to add an expense",11,muted,false);categories.addView(catSub);
+        addCategoryGrid(categories);
         loadMonth(chart,historyCount,historyAmount);
         LinearLayout recent=card(c);recent.addView(txt("Recent expenses",17,ink,true));addRecent(recent,5);
     }
     private void loadMonth(Chart chart,TextView historyCount,TextView historyAmount){String key=new SimpleDateFormat("yyyy-MM",Locale.US).format(month.getTime());Map<String,Double> data=new LinkedHashMap<>();double total=0;int count=0;for(String s:CATS)data.put(s,0d);Cursor q=db.getReadableDatabase().rawQuery("SELECT category,SUM(amount),COUNT(*) FROM expenses WHERE substr(date,1,7)=? GROUP BY category",new String[]{key});while(q.moveToNext()){String cat=q.getString(0);double val=q.getDouble(1);data.put(cat,val);total+=val;count+=q.getInt(2);}q.close();totalText.setText(money(total));countText.setText(count+" expense"+(count==1?"":"s")+" recorded");historyCount.setText(count+" records");historyAmount.setText(money(total));chart.setData(data,total);}
+    private void addCategoryGrid(LinearLayout parent){
+        String[] icons={"🧒","💍","👨‍👩‍👧","💊","🛒","🏍️","🧾","🛍️","🍽️","📦"};
+        int[] tints={0xFFEAF2FF,0xFFFFEEF2,0xFFEAF5EE,0xFFFFF0E5,0xFFFFF5DF,0xFFE5F5F3,0xFFF0ECFA,0xFFFFEDE5,0xFFFCEAF3,0xFFECEFF1};
+        for(int i=0;i<CATS.length;i+=2){
+            LinearLayout lineRow=row();LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(9);parent.addView(lineRow,rowLp);
+            for(int j=i;j<Math.min(i+2,CATS.length);j++){
+                final String cat=CATS[j];final int idx=j;
+                LinearLayout tile=col();tile.setPadding(dp(12),dp(12),dp(10),dp(12));tile.setBackground(shape(surface,16));tile.setElevation(dp(1));
+                LinearLayout.LayoutParams tileLp=new LinearLayout.LayoutParams(0,dp(91),1);if(j==i)tileLp.rightMargin=dp(8);lineRow.addView(tile,tileLp);
+                TextView symbol=txt(icons[idx],23,ink,true);symbol.setGravity(Gravity.CENTER);symbol.setBackground(shape(tints[idx],14));tile.addView(symbol,lp(39,39));
+                TextView label=txt(cat,13,ink,true);label.setPadding(0,dp(7),0,0);tile.addView(label);
+                tile.setOnClickListener(v->{selectedAddCategory=cat;showPage(1);});
+            }
+        }
+    }
     private void addRecent(LinearLayout target,int limit){Cursor q=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date FROM expenses ORDER BY date DESC,id DESC LIMIT "+limit,null);if(!q.moveToFirst()){TextView e=txt("No expenses yet. Add your first expense.",13,muted,false);e.setPadding(0,dp(18),0,dp(12));target.addView(e);}else do{String cat=q.getString(0),desc=q.getString(1);LinearLayout r=row();TextView left=txt(cat+(desc.isEmpty()?"":" · "+desc),13,ink,true);r.addView(left,new LinearLayout.LayoutParams(0,-2,1));r.addView(txt(money(q.getDouble(2)),13,GREEN,true));target.addView(r,lp(-1,43));View d=new View(this);d.setBackgroundColor(line);target.addView(d,lp(-1,1));}while(q.moveToNext());q.close();}
     private Button smallButton(String s){Button b=new Button(this);b.setText(s);b.setTextSize(22);b.setTextColor(ink);b.setAllCaps(false);b.setBackground(shape(surface,10));return b;}
     private Button primaryButton(String s){Button b=new Button(this);b.setText(s);b.setTextSize(13);b.setTextColor(Color.WHITE);b.setAllCaps(false);b.setBackground(shape(GREEN,12));return b;}
     private void addPage(){pageHeader("Add expense","Record a purchase for your household");LinearLayout c=content();LinearLayout form=card(c);
-        form.addView(txt("CATEGORY  *",11,muted,true));Spinner sp=new Spinner(this);sp.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));form.addView(sp,lp(-1,48));
+        form.addView(txt("CATEGORY  *",11,muted,true));Spinner sp=new Spinner(this);sp.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));sp.setSelection(Math.max(0,Arrays.asList(CATS).indexOf(selectedAddCategory)));form.addView(sp,lp(-1,48));
         TextView dl=txt("DESCRIPTION (OPTIONAL)",11,muted,true);dl.setPadding(0,dp(17),0,dp(4));form.addView(dl);EditText desc=new EditText(this);desc.setSingleLine(true);desc.setHint("e.g. School shoes");form.addView(desc,lp(-1,52));
         TextView al=txt("AMOUNT (PKR)  *",11,muted,true);al.setPadding(0,dp(17),0,dp(4));form.addView(al);EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Enter amount");form.addView(amount,lp(-1,52));
         TextView dateTitle=txt("DATE",11,muted,true);dateTitle.setPadding(0,dp(17),0,dp(4));form.addView(dateTitle);TextView date=txt(display.format(new Date()),14,ink,true);date.setPadding(dp(13),dp(14),dp(13),dp(14));date.setBackground(shape(bg,10));form.addView(date,lp(-1,48));date.setOnClickListener(v->pickDate(date));
-        Button save=primaryButton("Save expense");LinearLayout.LayoutParams s=lp(-1,50);s.topMargin=dp(22);form.addView(save,s);save.setOnClickListener(v->{String a=amount.getText().toString().trim();if(a.isEmpty()){amount.setError("Amount is required");return;}try{double val=Double.parseDouble(a);if(val<=0||Double.isInfinite(val)||Double.isNaN(val))throw new Exception();Date dt=display.parse(date.getText().toString());ContentValues cv=new ContentValues();cv.put("category",sp.getSelectedItem().toString());cv.put("description",desc.getText().toString().trim());cv.put("amount",val);cv.put("date",iso.format(dt));long savedId=db.getWritableDatabase().insert("expenses",null,cv);if(savedId>0)pushExpense(savedId);Toast.makeText(this,"Expense saved",Toast.LENGTH_SHORT).show();showPage(0);}catch(Exception e){amount.setError("Enter a valid amount");}});
+        Button save=primaryButton("Save expense");LinearLayout.LayoutParams s=lp(-1,50);s.topMargin=dp(22);form.addView(save,s);save.setOnClickListener(v->{String a=amount.getText().toString().trim();if(a.isEmpty()){amount.setError("Amount is required");return;}try{double val=Double.parseDouble(a);if(val<=0||Double.isInfinite(val)||Double.isNaN(val))throw new Exception();Date dt=display.parse(date.getText().toString());ContentValues cv=new ContentValues();selectedAddCategory=sp.getSelectedItem().toString();cv.put("category",selectedAddCategory);cv.put("description",desc.getText().toString().trim());cv.put("amount",val);cv.put("date",iso.format(dt));long savedId=db.getWritableDatabase().insert("expenses",null,cv);if(savedId>0)pushExpense(savedId);Toast.makeText(this,"Expense saved",Toast.LENGTH_SHORT).show();showPage(0);}catch(Exception e){amount.setError("Enter a valid amount");}});
     }
     private void pickDate(TextView target){Calendar c=Calendar.getInstance();try{c.setTime(display.parse(target.getText().toString()));}catch(Exception e){}new DatePickerDialog(this,(v,y,m,d)->{Calendar x=Calendar.getInstance();x.set(y,m,d);target.setText(display.format(x.getTime()));},c.get(Calendar.YEAR),c.get(Calendar.MONTH),c.get(Calendar.DAY_OF_MONTH)).show();}
     private void historyPage(){pageHeader("Expense history","Find and review your purchases");LinearLayout c=content();LinearLayout filters=card(c);
