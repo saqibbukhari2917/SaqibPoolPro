@@ -21,6 +21,9 @@ public class MainActivity extends Activity {
     private LinearLayout root,list;
     private TextView monthLabel,totalLabel,countLabel;
     private ChartView chart;
+    private TextView fromFilter,toFilter;
+    private Spinner categoryFilter;
+    private String historyFrom="",historyTo="",historyCategory="All categories";
     private Calendar month=Calendar.getInstance();
     private final SimpleDateFormat dateFmt=new SimpleDateFormat("dd MMM yyyy",Locale.ENGLISH);
     private final SimpleDateFormat isoFmt=new SimpleDateFormat("yyyy-MM-dd",Locale.US);
@@ -48,8 +51,28 @@ public class MainActivity extends Activity {
         LinearLayout content=vertical();content.setPadding(dp(18),dp(18),dp(18),dp(26));root.addView(content);
         LinearLayout add=horizontal();add.addView(text("Spending breakdown",18,INK,true),new LinearLayout.LayoutParams(0,-2,1));Button addBtn=new Button(this);addBtn.setText("+ Add expense");addBtn.setTextSize(12);addBtn.setTextColor(Color.WHITE);addBtn.setAllCaps(false);addBtn.setBackground(bg(GREEN,22));addBtn.setPadding(dp(14),0,dp(14),0);add.addView(addBtn,lp(-2,44));addBtn.setOnClickListener(v->showAddDialog());content.addView(add);
         chart=new ChartView(this);LinearLayout chartCard=vertical();chartCard.setBackground(bg(Color.WHITE,18));chartCard.setElevation(dp(2));chartCard.setPadding(dp(14),dp(10),dp(14),dp(12));LinearLayout.LayoutParams cp=lp(-1,250);cp.topMargin=dp(14);content.addView(chartCard,cp);chartCard.addView(chart,new LinearLayout.LayoutParams(-1,-1));
-        TextView recent=text("Recent expenses",18,INK,true);LinearLayout.LayoutParams rp=lp(-1,-2);rp.topMargin=dp(23);rp.bottomMargin=dp(10);content.addView(recent,rp);list=vertical();list.setBackground(bg(Color.WHITE,16));list.setPadding(dp(14),dp(4),dp(14),dp(4));content.addView(list);refreshData();
+        TextView recent=text("Expense history",18,INK,true);LinearLayout.LayoutParams rp=lp(-1,-2);rp.topMargin=dp(23);rp.bottomMargin=dp(10);content.addView(recent,rp);
+        LinearLayout filters=vertical();filters.setBackground(bg(Color.WHITE,16));filters.setPadding(dp(12),dp(10),dp(12),dp(10));content.addView(filters,lp(-1,-2));
+        LinearLayout dateRow=horizontal();
+        fromFilter=filterButton("From date");toFilter=filterButton("To date");
+        dateRow.addView(fromFilter,new LinearLayout.LayoutParams(0,dp(42),1));LinearLayout.LayoutParams toP=new LinearLayout.LayoutParams(0,dp(42),1);toP.leftMargin=dp(8);dateRow.addView(toFilter,toP);
+        Button clear=filterButton("Clear filters");LinearLayout.LayoutParams clearP=lp(-2,42);clearP.leftMargin=dp(8);dateRow.addView(clear,clearP);filters.addView(dateRow);
+        fromFilter.setOnClickListener(v->chooseFilterDate(true));toFilter.setOnClickListener(v->chooseFilterDate(false));
+        clear.setOnClickListener(v->{historyFrom="";historyTo="";historyCategory="All categories";categoryFilter.setSelection(0);updateFilterLabels();refreshData();});
+        categoryFilter=new Spinner(this);String[] historyCats=new String[CATEGORIES.length+1];historyCats[0]="All categories";System.arraycopy(CATEGORIES,0,historyCats,1,CATEGORIES.length);
+        ArrayAdapter<String> historyAdapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,historyCats);categoryFilter.setAdapter(historyAdapter);categoryFilter.setSelection(Math.max(0,Arrays.asList(historyCats).indexOf(historyCategory)));
+        categoryFilter.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onNothingSelected(android.widget.AdapterView<?> p){}public void onItemSelected(android.widget.AdapterView<?> p,View v,int position,long id){historyCategory=historyCats[position];refreshData();}});
+        TextView catLabel=text("CATEGORY",10,MUTED,true);catLabel.setPadding(0,dp(10),0,0);filters.addView(catLabel);filters.addView(categoryFilter,lp(-1,44));
+        updateFilterLabels();list=vertical();list.setBackground(bg(Color.WHITE,16));list.setPadding(dp(14),dp(4),dp(14),dp(4));LinearLayout.LayoutParams listP=lp(-1,-2);listP.topMargin=dp(10);content.addView(list,listP);refreshData();
     }
+    private Button filterButton(String label){Button b=new Button(this);b.setText(label);b.setTextSize(11);b.setTextColor(GREEN);b.setAllCaps(false);b.setBackground(bg(MINT,10));b.setPadding(dp(5),0,dp(5),0);return b;}
+    private void updateFilterLabels(){if(fromFilter!=null)fromFilter.setText(historyFrom.isEmpty()?"From date":"From: "+displayDate(historyFrom));if(toFilter!=null)toFilter.setText(historyTo.isEmpty()?"To date":"To: "+displayDate(historyTo));}
+    private void chooseFilterDate(boolean from){String existing=from?historyFrom:historyTo;Calendar cal=Calendar.getInstance();try{if(!existing.isEmpty())cal.setTime(isoFmt.parse(existing));}catch(Exception ignored){}
+        new DatePickerDialog(this,(view,y,m,d)->{Calendar picked=Calendar.getInstance();picked.set(y,m,d);String value=isoFmt.format(picked.getTime());if(from)historyFrom=value;else historyTo=value;
+            if(!historyFrom.isEmpty()&&!historyTo.isEmpty()&&historyFrom.compareTo(historyTo)>0){if(from)historyTo=historyFrom;else historyFrom=historyTo;}
+            updateFilterLabels();refreshData();},cal.get(Calendar.YEAR),cal.get(Calendar.MONTH),cal.get(Calendar.DAY_OF_MONTH)).show();
+    }
+
     private Button navButton(String s){Button b=new Button(this);b.setText(s);b.setTextSize(24);b.setTextColor(Color.WHITE);b.setAllCaps(false);b.setPadding(0,0,0,dp(4));b.setBackground(bg(0xFF285747,12));return b;}
 
     private void refreshData(){
@@ -57,7 +80,12 @@ public class MainActivity extends Activity {
         Cursor c=db.getReadableDatabase().rawQuery("SELECT category,SUM(amount),COUNT(*) FROM expenses WHERE substr(date,1,7)=? GROUP BY category",new String[]{key});
         while(c.moveToNext()){String cat=c.getString(0);double val=c.getDouble(1);total+=val;count+=c.getInt(2);sums.put(cat,val);}c.close();
         totalLabel.setText(money(total));countLabel.setText(count+" purchase"+(count==1?"":"s")+" recorded");chart.setData(sums,total);list.removeAllViews();
-        Cursor rows=db.getReadableDatabase().rawQuery("SELECT id,category,description,amount,date FROM expenses WHERE substr(date,1,7)=? ORDER BY date DESC,id DESC",new String[]{key});
+        StringBuilder historySql=new StringBuilder("SELECT id,category,description,amount,date FROM expenses WHERE 1=1");ArrayList<String> historyArgs=new ArrayList<>();
+        if(!historyFrom.isEmpty()){historySql.append(" AND date>=?");historyArgs.add(historyFrom);}
+        if(!historyTo.isEmpty()){historySql.append(" AND date<=?");historyArgs.add(historyTo);}
+        if(!"All categories".equals(historyCategory)){historySql.append(" AND category=?");historyArgs.add(historyCategory);}
+        historySql.append(" ORDER BY date DESC,id DESC");
+        Cursor rows=db.getReadableDatabase().rawQuery(historySql.toString(),historyArgs.toArray(new String[0]));
         if(!rows.moveToFirst()){TextView empty=text("No expenses yet. Tap + Add expense to get started.",14,MUTED,false);empty.setGravity(Gravity.CENTER);empty.setPadding(dp(10),dp(28),dp(10),dp(28));list.addView(empty);}
         else do{final long id=rows.getLong(0);String cat=rows.getString(1),desc=rows.getString(2),date=rows.getString(4);double amount=rows.getDouble(3);
             LinearLayout row=horizontal();row.setPadding(0,dp(12),0,dp(12));TextView icon=text(categoryIcon(cat),19,GREEN,true);icon.setGravity(Gravity.CENTER);icon.setBackground(bg(MINT,13));row.addView(icon,lp(44,44));
