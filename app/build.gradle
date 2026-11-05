@@ -20,7 +20,6 @@ android {
 dependencies {
     implementation 'androidx.biometric:biometric:1.1.0'
     implementation 'androidx.core:core:1.13.1'
-    implementation 'androidx.work:work-runtime:2.9.1'
     implementation 'androidx.documentfile:documentfile:1.0.1'
     implementation platform('com.google.firebase:firebase-bom:35.1.0')
     implementation 'com.google.firebase:firebase-auth'
