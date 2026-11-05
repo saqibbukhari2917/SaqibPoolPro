@@ -1,1 +1,0 @@
-Mobile build instructions: Create a GitHub repository, upload all ZIP contents preserving folders, open Actions, run 'Build Android APK', then download artifact 'Saqib-Pool-Pro-debug'. This is only a floating overlay demo, NOT yet a full aiming assistant. No paid service required for a public repository.
