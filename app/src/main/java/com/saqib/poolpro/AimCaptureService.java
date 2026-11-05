@@ -689,12 +689,21 @@ public class AimCaptureService extends Service {
                 .append(" | Lines: ")
                 .append(lines.size());
 
-        // Only six strongest candidates are shown.
-        int shown = Math.min(lines.size(), 6);
+        // Show short candidates first: these are the post-contact guides
+        // the extension logic is expected to select, not the long cue line.
+        List<Line> diagnostic = new ArrayList<>();
+        for (Line candidate : lines) {
+            if (candidate.length() >= 10f && candidate.length() <= 220f) {
+                diagnostic.add(candidate);
+            }
+        }
+        Collections.sort(diagnostic,
+                (a, b) -> Float.compare(b.votes, a.votes));
+        int shown = Math.min(diagnostic.size(), 6);
 
         for (int i = 0; i < shown; i++) {
 
-            Line line = lines.get(i);
+            Line line = diagnostic.get(i);
 
             report.append("\nL")
                     .append(i + 1)
@@ -735,105 +744,94 @@ public class AimCaptureService extends Service {
             List<Line> lines, List<Point> points,
             int width, int height) {
 
-        if (lines == null || lines.size() < 2) return null;
+        if (lines == null || lines.size() < 2 || points == null) return null;
 
-        // The required sources are the TWO short post-contact guide lines.
-        // Never select the long cue-ball incoming guide.
-        Line first = null;
-        Line second = null;
+        /*
+         * Only short post-contact guides are eligible. The long incoming
+         * cue-ball guide is deliberately excluded. A valid pair must:
+         *  - have a shared endpoint close to the contact marker,
+         *  - point in clearly different directions,
+         *  - have visible white-pixel support around the shared marker.
+         */
+        Line bestA = null;
+        Line bestB = null;
         float bestScore = Float.POSITIVE_INFINITY;
+        float bestOriginX = 0f;
+        float bestOriginY = 0f;
+        float bestAOuterX = 0f, bestAOuterY = 0f;
+        float bestBOuterX = 0f, bestBOuterY = 0f;
 
         for (int i = 0; i < lines.size(); i++) {
             Line a = lines.get(i);
             float lenA = a.length();
-            if (lenA < 12f || lenA > 240f) continue;
+            if (lenA < 14f || lenA > 190f) continue;
 
             for (int j = i + 1; j < lines.size(); j++) {
                 Line b = lines.get(j);
                 float lenB = b.length();
-                if (lenB < 12f || lenB > 240f) continue;
+                if (lenB < 14f || lenB > 190f) continue;
 
                 float angle = angleDifference(a.angle(), b.angle());
-                if (angle < 18f || angle > 88f) continue;
+                if (angle < 32f) continue;
 
-                // Find the closest pair of endpoints. The two short guide
-                // segments should meet at the collision/contact marker.
-                float[][] ea = {{a.x1, a.y1}, {a.x2, a.y2}};
-                float[][] eb = {{b.x1, b.y1}, {b.x2, b.y2}};
-                float gap = Float.MAX_VALUE;
+                float[][] ae = {{a.x1, a.y1}, {a.x2, a.y2}};
+                float[][] be = {{b.x1, b.y1}, {b.x2, b.y2}};
 
-                for (float[] pa : ea) {
-                    for (float[] pb : eb) {
-                        float d = (float) Math.hypot(pa[0] - pb[0], pa[1] - pb[1]);
-                        if (d < gap) gap = d;
+                for (int ai = 0; ai < 2; ai++) {
+                    for (int bi = 0; bi < 2; bi++) {
+                        float ax = ae[ai][0], ay = ae[ai][1];
+                        float bx = be[bi][0], by = be[bi][1];
+                        float gap = (float) Math.hypot(ax - bx, ay - by);
+                        if (gap > 18f) continue;
+
+                        float ox = (ax + bx) * 0.5f;
+                        float oy = (ay + by) * 0.5f;
+                        int markerSupport = whitePointsNear(points, ox, oy);
+
+                        // A real contact marker has a compact white ring/
+                        // junction around the common endpoint. Reject random
+                        // pairs that merely happen to be close together.
+                        if (markerSupport < 3) continue;
+
+                        float score = gap * 4f
+                                - markerSupport * 2.5f
+                                - Math.min(a.votes, b.votes) * 0.01f
+                                + Math.abs(lenA - lenB) * 0.03f;
+
+                        if (score < bestScore) {
+                            bestScore = score;
+                            bestA = a;
+                            bestB = b;
+                            bestOriginX = ox;
+                            bestOriginY = oy;
+
+                            int ao = 1 - ai;
+                            int bo = 1 - bi;
+                            bestAOuterX = ae[ao][0];
+                            bestAOuterY = ae[ao][1];
+                            bestBOuterX = be[bo][0];
+                            bestBOuterY = be[bo][1];
+                        }
                     }
                 }
-
-                if (gap > 26f) continue;
-
-                // Prefer a tight shared endpoint and two clearly visible
-                // short segments, rather than unrelated white table details.
-                float score = gap * 5f
-                        + Math.abs(lenA - lenB) * 0.12f
-                        - Math.min(a.votes, b.votes) * 0.002f;
-
-                if (score < bestScore) {
-                    bestScore = score;
-                    first = a;
-                    second = b;
-                }
             }
         }
 
-        if (first == null || second == null) return null;
-
-        // Determine the shared endpoint pair and use its midpoint as the
-        // common collision origin. Each ray follows its OWN detected line.
-        float bestGap = Float.MAX_VALUE;
-        float originX = 0f, originY = 0f;
-        float firstOuterX = 0f, firstOuterY = 0f;
-        float secondOuterX = 0f, secondOuterY = 0f;
-
-        float[][] fEnds = {{first.x1, first.y1}, {first.x2, first.y2}};
-        float[][] sEnds = {{second.x1, second.y1}, {second.x2, second.y2}};
-
-        for (int fi = 0; fi < 2; fi++) {
-            for (int si = 0; si < 2; si++) {
-                float fx = fEnds[fi][0], fy = fEnds[fi][1];
-                float sx = sEnds[si][0], sy = sEnds[si][1];
-                float gap = (float) Math.hypot(fx - sx, fy - sy);
-
-                if (gap < bestGap) {
-                    bestGap = gap;
-                    originX = (fx + sx) * 0.5f;
-                    originY = (fy + sy) * 0.5f;
-
-                    int fo = 1 - fi;
-                    int so = 1 - si;
-                    firstOuterX = fEnds[fo][0];
-                    firstOuterY = fEnds[fo][1];
-                    secondOuterX = sEnds[so][0];
-                    secondOuterY = sEnds[so][1];
-                }
-            }
-        }
-
-        if (bestGap > 26f) return null;
+        if (bestA == null || bestB == null) return null;
 
         float left = width * 0.195f;
         float right = width * 0.805f;
         float top = height * 0.237f;
         float bottom = height * 0.914f;
 
-        // Extend BOTH short post-contact rays from their common marker.
-        float[] pair = TableGeometry.extendTwoLinesFromOrigins(
-                originX, originY,
-                firstOuterX - originX, firstOuterY - originY,
-                originX, originY,
-                secondOuterX - originX, secondOuterY - originY,
+        // Extend each detected short guide from the shared contact marker
+        // along its own detected direction, never from the cue-ball line.
+        return TableGeometry.extendTwoLinesFromOrigins(
+                bestOriginX, bestOriginY,
+                bestAOuterX - bestOriginX, bestAOuterY - bestOriginY,
+                bestOriginX, bestOriginY,
+                bestBOuterX - bestOriginX, bestBOuterY - bestOriginY,
                 left, top, right, bottom);
-
-        return pair;
     }
 
     private void sendLines(float[] lines, int width, int height) {
