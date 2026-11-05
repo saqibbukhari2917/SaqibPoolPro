@@ -782,21 +782,25 @@ public class AimCaptureService extends Service {
                         float ax = ae[ai][0], ay = ae[ai][1];
                         float bx = be[bi][0], by = be[bi][1];
                         float gap = (float) Math.hypot(ax - bx, ay - by);
-                        if (gap > 18f) continue;
+
+                        // The two guide segments usually stop at opposite
+                        // edges of the colored contact ball, not at one
+                        // identical pixel. Allow a ball-sized gap; this is
+                        // independent of screen position and shot direction.
+                        if (gap < 24f || gap > 92f) continue;
 
                         float ox = (ax + bx) * 0.5f;
                         float oy = (ay + by) * 0.5f;
+
+                        // Prefer endpoints whose midpoint is surrounded by
+                        // visible guide/ball-edge pixels, but don't require
+                        // a white center: the ball itself is colored.
                         int markerSupport = whitePointsNear(points, ox, oy);
 
-                        // A real contact marker has a compact white ring/
-                        // junction around the common endpoint. Reject random
-                        // pairs that merely happen to be close together.
-                        if (markerSupport < 3) continue;
-
-                        float score = gap * 4f
-                                - markerSupport * 2.5f
-                                - Math.min(a.votes, b.votes) * 0.01f
-                                + Math.abs(lenA - lenB) * 0.03f;
+                        float score = Math.abs(gap - 56f) * 1.2f
+                                - markerSupport * 0.15f
+                                - Math.min(a.votes, b.votes) * 0.015f
+                                + Math.abs(lenA - lenB) * 0.02f;
 
                         if (score < bestScore) {
                             bestScore = score;
@@ -818,6 +822,10 @@ public class AimCaptureService extends Service {
         }
 
         if (bestA == null || bestB == null) return null;
+
+        // Reject nearly parallel/duplicate segments even if Hough produced
+        // slightly different endpoints for the same physical guide.
+        if (angleDifference(bestA.angle(), bestB.angle()) < 32f) return null;
 
         float left = width * 0.195f;
         float right = width * 0.805f;
