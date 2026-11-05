@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "739730141232",
+    "project_id": "saqib-finance",
+    "storage_bucket": "saqib-finance.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:739730141232:android:73d12975c43a0d3dd5bdf5",
+        "android_client_info": {
+          "package_name": "com.saqib.finance"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "739730141232-slhm9don92inuait1t34p040b2m6ksb0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.saqib.finance",
+            "certificate_hash": "d0af83c78026dc2c135af16389d0cada48c5d13f"
+          }
+        },
+        {
+          "client_id": "739730141232-sfkl5le3qi5re5fvpc5bv8hfk69q1g5l.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCtsbiC2WK1fnBba9-jlI8b0C35ip9A21c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "739730141232-sfkl5le3qi5re5fvpc5bv8hfk69q1g5l.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
