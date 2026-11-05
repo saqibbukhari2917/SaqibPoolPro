@@ -777,55 +777,25 @@ public class AimCaptureService extends Service {
         float bestAOuterX = 0f, bestAOuterY = 0f;
         float bestBOuterX = 0f, bestBOuterY = 0f;
 
-        // Reject only segments that terminate at a true multi-direction
-        // reticle hub. A simple shared-endpoint test was too aggressive and
-        // removed valid short guides. Here, two other differently-directed
-        // detected lines must geometrically pass through the same endpoint.
+        // Keep short guide candidates only. Long incoming cue-ball
+        // aiming rays are not post-contact prediction guides.
         List<Line> eligible = new ArrayList<>();
         for (Line candidate : lines) {
-            boolean reticleSpoke = false;
-            float[][] ends = {
-                    {candidate.x1, candidate.y1},
-                    {candidate.x2, candidate.y2}
-            };
-            // Only suppress short spokes at the reticle. Long rays
-            // that continue from the contact point to a cushion must remain
-            // available as post-contact candidates.
-            if (candidate.length() <= 190f) {
-            for (float[] end : ends) {
-                List<Float> hubAngles = new ArrayList<>();
-                for (Line other : lines) {
-                    if (other == candidate) continue;
-                    if (linePassesNearPoint(other, end[0], end[1], 10f)) {
-                        float angle = other.angle();
-                        boolean distinct = true;
-                        for (Float known : hubAngles) {
-                            if (angleDifference(known, angle) < 18f) {
-                                distinct = false;
-                                break;
-                            }
-                        }
-                        if (distinct) hubAngles.add(angle);
-                    }
-                }
-                if (hubAngles.size() >= 2) {
-                    reticleSpoke = true;
-                    break;
-                }
+            float length = candidate.length();
+            if (length >= 14f && length <= 190f) {
+                eligible.add(candidate);
             }
-            }
-            if (!reticleSpoke) eligible.add(candidate);
         }
 
         for (int i = 0; i < eligible.size(); i++) {
             Line a = eligible.get(i);
             float lenA = a.length();
-            if (lenA < 80f || lenA > 900f) continue;
+            if (lenA < 14f || lenA > 190f) continue;
 
             for (int j = i + 1; j < eligible.size(); j++) {
                 Line b = eligible.get(j);
                 float lenB = b.length();
-                if (lenB < 80f || lenB > 900f) continue;
+                if (lenB < 14f || lenB > 190f) continue;
 
                 float angle = angleDifference(a.angle(), b.angle());
                 if (angle < 32f) continue;
@@ -843,7 +813,7 @@ public class AimCaptureService extends Service {
                         // edges of the colored contact ball, not at one
                         // identical pixel. Allow a ball-sized gap; this is
                         // independent of screen position and shot direction.
-                        if (gap > 92f) continue;
+                        if (gap < 24f || gap > 92f) continue;
 
                         float ox = (ax + bx) * 0.5f;
                         float oy = (ay + by) * 0.5f;
@@ -852,28 +822,6 @@ public class AimCaptureService extends Service {
                         int bo = 1 - bi;
                         float aOuterX = ae[ao][0], aOuterY = ae[ao][1];
                         float bOuterX = be[bo][0], bOuterY = be[bo][1];
-
-                        float tableLeft = width * 0.195f;
-                        float tableRight = width * 0.805f;
-                        float tableTop = height * 0.237f;
-                        float tableBottom = height * 0.914f;
-                        float aCushionDistance = Math.min(
-                                Math.min(Math.abs(aOuterX - tableLeft),
-                                        Math.abs(aOuterX - tableRight)),
-                                Math.min(Math.abs(aOuterY - tableTop),
-                                        Math.abs(aOuterY - tableBottom)));
-                        float bCushionDistance = Math.min(
-                                Math.min(Math.abs(bOuterX - tableLeft),
-                                        Math.abs(bOuterX - tableRight)),
-                                Math.min(Math.abs(bOuterY - tableTop),
-                                        Math.abs(bOuterY - tableBottom)));
-
-                        // Both outgoing prediction rays should terminate at
-                        // a table cushion. The incoming cue guide ends at the
-                        // cue ball inside the table and is rejected here.
-                        if (aCushionDistance > 65f || bCushionDistance > 65f) {
-                            continue;
-                        }
 
                         // Prefer endpoints whose midpoint is surrounded by
                         // visible guide/ball-edge pixels, but don't require
