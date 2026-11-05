@@ -32,7 +32,7 @@ public class MainActivity extends FragmentActivity {
     private GoogleSignInClient googleSignInClient;
     private ConnectivityManager.NetworkCallback cloudNetworkCallback;
     private static final String[] CATS={"Kids","Wife","Family","Medicine","Grocery","Transport","Bills","Shopping","Dining","Other"};
-    private static final int GREEN=0xFF174F3D, DEEP=0xFF0D3328, GOLD=0xFFE1B45A, MINT=0xFFE5F0E8;
+    private static final int GREEN=0xFF245B45, DEEP=0xFF123B2D, GOLD=0xFFE3B65C, MINT=0xFFEAF1E8;
     private DB db; private LinearLayout root,body,nav; private int page=0; private boolean dark=false;
     private Calendar month=Calendar.getInstance(); private String from="",to="",category="All categories",selectedAddCategory="Grocery";
     private TextView totalText,countText,monthText,pendingCloudText; private LinearLayout historyList;
@@ -66,7 +66,7 @@ public class MainActivity extends FragmentActivity {
             .build();
         prompt.authenticate(info);
     }
-    private void palette(){bg=dark?0xFF101A16:0xFFF5F7F3;surface=dark?0xFF1B2922:Color.WHITE;ink=dark?0xFFF1F4F0:0xFF24352C;muted=dark?0xFFB0BDB4:0xFF78847B;line=dark?0xFF34443A:0xFFE8EDE8;getWindow().setStatusBarColor(DEEP);getWindow().setNavigationBarColor(DEEP);}
+    private void palette(){bg=dark?0xFF101A16:0xFFF7F3E9;surface=dark?0xFF1B2922:0xFFFFFDF8;ink=dark?0xFFF1F4F0:0xFF24382D;muted=dark?0xFFB0BDB4:0xFF7C887D;line=dark?0xFF34443A:0xFFE9E1D2;getWindow().setStatusBarColor(DEEP);getWindow().setNavigationBarColor(DEEP);}
     private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
     private GradientDrawable shape(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
     private TextView txt(String s,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);if(bold)t.setTypeface(null,1);return t;}
