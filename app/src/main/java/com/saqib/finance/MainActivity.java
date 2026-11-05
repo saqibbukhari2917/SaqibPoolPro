@@ -108,6 +108,17 @@ public class MainActivity extends FragmentActivity {
     private void pickFilter(boolean start){String old=start?from:to;Calendar c=Calendar.getInstance();try{if(!old.isEmpty())c.setTime(iso.parse(old));}catch(Exception e){}new DatePickerDialog(this,(v,y,m,d)->{Calendar x=Calendar.getInstance();x.set(y,m,d);String value=iso.format(x.getTime());if(start)from=value;else to=value;if(!from.isEmpty()&&!to.isEmpty()&&from.compareTo(to)>0){if(start)to=from;else from=to;}showPage(2);},c.get(Calendar.YEAR),c.get(Calendar.MONTH),c.get(Calendar.DAY_OF_MONTH)).show();}
     private void refreshHistory(){if(historyList==null)return;historyList.removeAllViews();StringBuilder sql=new StringBuilder("SELECT id,category,description,amount,date FROM expenses WHERE 1=1");ArrayList<String>a=new ArrayList<>();if(!from.isEmpty()){sql.append(" AND date>=?");a.add(from);}if(!to.isEmpty()){sql.append(" AND date<=?");a.add(to);}if(!category.equals("All categories")){sql.append(" AND category=?");a.add(category);}sql.append(" ORDER BY date DESC,id DESC");Cursor q=db.getReadableDatabase().rawQuery(sql.toString(),a.toArray(new String[0]));if(!q.moveToFirst()){historyList.addView(txt("No matching expenses found.",14,muted,false));}else do{final long id=q.getLong(0);String cat=q.getString(1),desc=q.getString(2),date=q.getString(4);double amount=q.getDouble(3);LinearLayout r=row();r.setPadding(0,dp(10),0,dp(10));LinearLayout d=col();d.addView(txt(cat,14,ink,true));d.addView(txt((desc.isEmpty()?"":desc+" · ")+dateLabel(date),11,muted,false));r.addView(d,new LinearLayout.LayoutParams(0,-2,1));r.addView(txt(money(amount),14,GREEN,true));r.setOnClickListener(v->editExpense(id,cat,desc,amount,date));historyList.addView(r);View sep=new View(this);sep.setBackgroundColor(line);historyList.addView(sep,lp(-1,1));}while(q.moveToNext());q.close();}
     private void editExpense(long id,String cat,String desc,double value,String date){LinearLayout box=col();Spinner sp=new Spinner(this);sp.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));sp.setSelection(Math.max(0,Arrays.asList(CATS).indexOf(cat)));EditText de=new EditText(this);de.setHint("Description (optional)");de.setText(desc);EditText am=new EditText(this);am.setInputType(8194);am.setText(String.valueOf(value));TextView dt=txt(dateLabel(date),14,ink,true);dt.setPadding(dp(10),dp(12),dp(10),dp(12));dt.setOnClickListener(v->pickDate(dt));box.addView(txt("Category",12,muted,true));box.addView(sp);box.addView(txt("Description (optional)",12,muted,true));box.addView(de);box.addView(txt("Amount (PKR)",12,muted,true));box.addView(am);box.addView(txt("Date",12,muted,true));box.addView(dt);new AlertDialog.Builder(this).setTitle("Edit expense").setView(box).setNegativeButton("Cancel",null).setNeutralButton("Delete",(x,y)->new AlertDialog.Builder(this).setMessage("Delete this expense?").setNegativeButton("Cancel",null).setPositiveButton("Delete",(z,w)->{db.getWritableDatabase().delete("expenses","id=?",new String[]{String.valueOf(id)});refreshHistory();}).show()).setPositiveButton("Save",(x,y)->{try{Date parsed=display.parse(dt.getText().toString());double n=Double.parseDouble(am.getText().toString());if(n<=0)throw new Exception();ContentValues cv=new ContentValues();cv.put("category",sp.getSelectedItem().toString());cv.put("description",de.getText().toString().trim());cv.put("amount",n);cv.put("date",iso.format(parsed));db.getWritableDatabase().update("expenses",cv,"id=?",new String[]{String.valueOf(id)});refreshHistory();}catch(Exception e){Toast.makeText(this,"Please enter a valid amount",Toast.LENGTH_SHORT).show();}}).show();}
+    private boolean checkDriveApp(){
+        try { getPackageManager().getPackageInfo("com.google.android.apps.docs",0); return true; }
+        catch(Exception e){
+            new AlertDialog.Builder(this).setTitle("Google Drive required")
+                .setMessage("Install Google Drive from the Play Store and sign in with your Google account. Then return to Saqib Finance and choose your backup folder.")
+                .setNegativeButton("Cancel",null)
+                .setPositiveButton("Install",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.apps.docs"))))
+                .show();
+            return false;
+        }
+    }
     private void settingsPage(){
         pageHeader("Settings","Make Saqib Finance feel like yours");
         LinearLayout c=content();
@@ -121,10 +132,11 @@ public class MainActivity extends FragmentActivity {
         LinearLayout backup=card(c);
         backup.addView(txt("BACKUP & RESTORE",10,GOLD,true));
         backup.addView(txt("Keep your family records safe",17,ink,true));
-        TextView help=txt("Save a backup file to Google Drive, then restore it on this or a new phone using the same Google account. Choose Google Drive in the Android file picker.",12,muted,false);
+        TextView help=txt("Install Google Drive and sign in first. Then choose your Drive folder below. Backups can be restored on this or a new phone using the same Google account.",12,muted,false);
         help.setPadding(0,dp(5),0,dp(12));backup.addView(help);
         Button saveBackup=primaryButton("Backup to Google Drive");backup.addView(saveBackup,lp(-1,48));
         saveBackup.setOnClickListener(v->{
+            if(!checkDriveApp())return;
             Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
             intent.setType("application/json");
@@ -142,11 +154,12 @@ public class MainActivity extends FragmentActivity {
         TextView folderStatus=txt(getPreferences(0).getString(PREF_BACKUP_TREE,null)==null?"Google Drive folder: Not selected":"Google Drive folder: Selected",12,muted,false);
         folderStatus.setPadding(0,dp(5),0,dp(7));backup.addView(folderStatus);
         Button chooseFolder=smallFilter("Choose Google Drive folder");backup.addView(chooseFolder,lp(-1,44));
-        chooseFolder.setOnClickListener(v->{Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(pick,REQUEST_BACKUP_FOLDER);});
-        frequency.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){boolean first=true;public void onNothingSelected(AdapterView<?> a){}public void onItemSelected(AdapterView<?> a,View v,int pos,long id){if(first){first=false;return;}String choice=frequencyOptions[pos];getPreferences(0).edit().putString(PREF_BACKUP_FREQUENCY,choice).apply();if(!choice.equals("Off")&&getPreferences(0).getString(PREF_BACKUP_TREE,null)==null){frequency.setSelection(0);getPreferences(0).edit().putString(PREF_BACKUP_FREQUENCY,"Off").apply();Toast.makeText(MainActivity.this,"First choose a Google Drive folder.",Toast.LENGTH_LONG).show();return;}scheduleAutomaticBackup(choice);Toast.makeText(MainActivity.this,choice.equals("Off")?"Automatic backup turned off":"Automatic "+choice.toLowerCase()+" backup enabled",Toast.LENGTH_SHORT).show();}});
+        chooseFolder.setOnClickListener(v->{if(!checkDriveApp())return;Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(pick,REQUEST_BACKUP_FOLDER);});
+        frequency.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){boolean first=true;public void onNothingSelected(AdapterView<?> a){}public void onItemSelected(AdapterView<?> a,View v,int pos,long id){if(first){first=false;return;}String choice=frequencyOptions[pos];if(!choice.equals("Off")&&!checkDriveApp()){frequency.setSelection(0);return;}getPreferences(0).edit().putString(PREF_BACKUP_FREQUENCY,choice).apply();if(!choice.equals("Off")&&getPreferences(0).getString(PREF_BACKUP_TREE,null)==null){frequency.setSelection(0);getPreferences(0).edit().putString(PREF_BACKUP_FREQUENCY,"Off").apply();Toast.makeText(MainActivity.this,"First choose a Google Drive folder.",Toast.LENGTH_LONG).show();return;}scheduleAutomaticBackup(choice);Toast.makeText(MainActivity.this,choice.equals("Off")?"Automatic backup turned off":"Automatic "+choice.toLowerCase()+" backup enabled",Toast.LENGTH_SHORT).show();}});
         Button restore=smallFilter("Restore from Google Drive");
         LinearLayout.LayoutParams restoreLp=lp(-1,46);restoreLp.topMargin=dp(9);backup.addView(restore,restoreLp);
         restore.setOnClickListener(v->{
+            if(!checkDriveApp())return;
             Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
             intent.setType("*/*");
