@@ -1,6 +1,7 @@
 package com.saqib.finance;
 
 import android.app.AlarmManager;
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -14,7 +15,9 @@ import android.os.Build;
 import androidx.core.app.NotificationCompat;
 
 public class ReminderReceiver extends BroadcastReceiver {
-    public static final String CHANNEL_ID = "buy_reminders";
+    // New channel ID applies the private lock-screen setting to existing installations too.
+    public static final String CHANNEL_ID = "buy_reminders_private";
+
     public static void schedule(Context context, long id, String item, long triggerAt) {
         Intent intent = new Intent(context, ReminderReceiver.class);
         intent.putExtra("reminder_id", id);
@@ -31,6 +34,7 @@ public class ReminderReceiver extends BroadcastReceiver {
             }
         }
     }
+
     public static void cancel(Context context, long id) {
         Intent intent = new Intent(context, ReminderReceiver.class);
         PendingIntent pi = PendingIntent.getBroadcast(context, (int)id, intent,
@@ -39,6 +43,7 @@ public class ReminderReceiver extends BroadcastReceiver {
         if (am != null) am.cancel(pi);
         pi.cancel();
     }
+
     private void createChannel(Context context) {
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationManager nm = context.getSystemService(NotificationManager.class);
@@ -52,19 +57,30 @@ public class ReminderReceiver extends BroadcastReceiver {
                 channel.setDescription("Scheduled purchase reminders with alarm sound");
                 channel.setSound(alarm, attrs);
                 channel.enableVibration(true);
+                channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
                 nm.createNotificationChannel(channel);
             }
         }
     }
+
     @Override public void onReceive(Context context, Intent intent) {
         long id = intent.getLongExtra("reminder_id", 0);
         String item = intent.getStringExtra("reminder_item");
         if (item == null || item.trim().isEmpty()) item = "Your planned purchase";
         createChannel(context);
+
         Intent open = new Intent(context, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent content = PendingIntent.getActivity(context, (int)(id ^ 0x5A5A), open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+        Notification publicNotification = new NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                .setContentTitle("Saqib Finance")
+                .setContentText(" ")
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .build();
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
                 .setContentTitle("Time to buy")
@@ -72,7 +88,10 @@ public class ReminderReceiver extends BroadcastReceiver {
                 .setStyle(new NotificationCompat.BigTextStyle().bigText("Reminder: buy " + item))
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setPublicVersion(publicNotification)
                 .setAutoCancel(true).setContentIntent(content);
+
         NotificationManager nm = (NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT < 33 || context.checkSelfPermission("android.permission.POST_NOTIFICATIONS") == android.content.pm.PackageManager.PERMISSION_GRANTED) {
             nm.notify((int)id, builder.build());
