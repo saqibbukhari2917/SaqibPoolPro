@@ -130,11 +130,6 @@ public class MainActivity extends FragmentActivity {
         security.addView(txt("App screen lock",17,ink,true));
         security.addView(txt("Require fingerprint or your phone PIN before showing expenses.",12,muted,false));
         Switch lockSwitch=new Switch(this);lockSwitch.setText("Screen lock");lockSwitch.setTextColor(ink);lockSwitch.setChecked(getPreferences(0).getBoolean("screen_lock",true));lockSwitch.setPadding(0,dp(12),0,0);security.addView(lockSwitch);
-        lockSwitch.setOnCheckedChangeListener((button,on)->{
-            getPreferences(0).edit().putBoolean("screen_lock",on).apply();
-            if(on){unlocked=false;showLockScreen();showSecurityPrompt();}
-            else{unlocked=true;lockPromptShowing=false;openMainUI(3);}
-        });
         Switch recentLockSwitch=new Switch(this);recentLockSwitch.setText("Lock when returning from Recent Apps");recentLockSwitch.setTextColor(ink);recentLockSwitch.setChecked(getPreferences(0).getBoolean("lock_on_recent_apps",false));recentLockSwitch.setPadding(0,dp(12),0,0);recentLockSwitch.setEnabled(getPreferences(0).getBoolean("screen_lock",true));security.addView(recentLockSwitch);
         security.addView(txt("Off: return to the app without unlocking again. On: ask for fingerprint or phone PIN whenever you leave and reopen the app.",12,muted,false));
         recentLockSwitch.setOnCheckedChangeListener((button,on)->getPreferences(0).edit().putBoolean("lock_on_recent_apps",on).apply());
