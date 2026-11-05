@@ -32,16 +32,23 @@ public class MainActivity extends FragmentActivity {
     private final SimpleDateFormat iso=new SimpleDateFormat("yyyy-MM-dd",Locale.US);
     private final SimpleDateFormat display=new SimpleDateFormat("dd MMM yyyy",Locale.ENGLISH);
     private final SimpleDateFormat monthFmt=new SimpleDateFormat("MMMM yyyy",Locale.ENGLISH);
-    private int bg,surface,ink,muted,line; private boolean unlocked=false, lockPromptShowing=false;
-    @Override public void onCreate(Bundle b){super.onCreate(b);dark=getPreferences(0).getBoolean("dark",false);db=new DB(this);palette();buildShell();showPage(0);}
-    @Override protected void onResume(){super.onResume();if(!unlocked&&!lockPromptShowing)showSecurityPrompt();}
-    @Override protected void onStop(){super.onStop();if(!isChangingConfigurations())unlocked=false;}
+    private int bg,surface,ink,muted,line; private boolean unlocked=false, lockPromptShowing=false, uiReady=false;
+    @Override public void onCreate(Bundle b){super.onCreate(b);dark=getPreferences(0).getBoolean("dark",false);db=new DB(this);palette();if(getPreferences(0).getBoolean("screen_lock",true)){showLockScreen();showSecurityPrompt();}else{unlocked=true;openMainUI(0);}}
+    @Override protected void onResume(){super.onResume();if(getPreferences(0).getBoolean("screen_lock",true)&&!unlocked&&!lockPromptShowing){showLockScreen();showSecurityPrompt();}}
+    @Override protected void onStop(){super.onStop();if(!isChangingConfigurations()&&getPreferences(0).getBoolean("screen_lock",true)){unlocked=false;showLockScreen();}}
+    private void openMainUI(int targetPage){uiReady=true;palette();buildShell();showPage(targetPage);}
+    private void showLockScreen(){
+        LinearLayout lock=col();lock.setGravity(Gravity.CENTER);lock.setBackgroundColor(DEEP);lock.setPadding(dp(28),dp(28),dp(28),dp(28));
+        ImageView appIcon=new ImageView(this);appIcon.setImageResource(R.drawable.ic_launcher);appIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);lock.addView(appIcon,lp(92,92));
+        TextView appName=txt("Saqib Finance",24,Color.WHITE,true);appName.setGravity(Gravity.CENTER);LinearLayout.LayoutParams nameLp=lp(-1,-2);nameLp.topMargin=dp(18);lock.addView(appName,nameLp);
+        setContentView(lock);
+    }
     private void showSecurityPrompt(){
         lockPromptShowing=true;
         Executor executor=ContextCompat.getMainExecutor(this);
         BiometricPrompt prompt=new BiometricPrompt(this,executor,new BiometricPrompt.AuthenticationCallback(){
-            @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result){super.onAuthenticationSucceeded(result);unlocked=true;lockPromptShowing=false;}
-            @Override public void onAuthenticationError(int errorCode,CharSequence errString){super.onAuthenticationError(errorCode,errString);lockPromptShowing=false;Toast.makeText(MainActivity.this,"Authentication required to open Saqib Finance",Toast.LENGTH_LONG).show();finish();}
+            @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result){super.onAuthenticationSucceeded(result);unlocked=true;lockPromptShowing=false;openMainUI(page);}
+            @Override public void onAuthenticationError(int errorCode,CharSequence errString){super.onAuthenticationError(errorCode,errString);lockPromptShowing=false;Toast.makeText(MainActivity.this,"Unlock required to open Saqib Finance",Toast.LENGTH_LONG).show();finish();}
             @Override public void onAuthenticationFailed(){super.onAuthenticationFailed();Toast.makeText(MainActivity.this,"Not recognized. Try again.",Toast.LENGTH_SHORT).show();}
         });
         BiometricPrompt.PromptInfo info=new BiometricPrompt.PromptInfo.Builder()
@@ -122,6 +129,17 @@ public class MainActivity extends FragmentActivity {
     private void settingsPage(){
         pageHeader("Settings","Make Saqib Finance feel like yours");
         LinearLayout c=content();
+        LinearLayout security=card(c);
+        security.addView(txt("SECURITY",10,GOLD,true));
+        security.addView(txt("App screen lock",17,ink,true));
+        security.addView(txt("Require fingerprint or your phone PIN before showing expenses.",12,muted,false));
+        Switch lockSwitch=new Switch(this);lockSwitch.setText("Screen lock");lockSwitch.setTextColor(ink);lockSwitch.setChecked(getPreferences(0).getBoolean("screen_lock",true));lockSwitch.setPadding(0,dp(12),0,0);security.addView(lockSwitch);
+        lockSwitch.setOnCheckedChangeListener((button,on)->{
+            getPreferences(0).edit().putBoolean("screen_lock",on).apply();
+            if(on){unlocked=false;showLockScreen();showSecurityPrompt();}
+            else{unlocked=true;lockPromptShowing=false;openMainUI(3);}
+        });
+
         LinearLayout appearance=card(c);
         appearance.addView(txt("APPEARANCE",10,GOLD,true));
         appearance.addView(txt("App theme",17,ink,true));
