@@ -1,4 +1,6 @@
 name: Build Saqib Finance APK
+permissions:
+  contents: write
 on:
   workflow_dispatch:
   push:
@@ -33,8 +35,19 @@ jobs:
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
-      - name: Print stable debug signing SHA-1
-        run: gradle --no-daemon :app:signingReport
+      - name: Save stable debug SHA-1 for Firebase
+        run: |
+          gradle --no-daemon :app:signingReport | tee signing-report.txt
+          SHA1=$(awk '/Variant: debug/{debug=1} debug && /SHA1:/{print $2; exit}' signing-report.txt)
+          test -n "$SHA1"
+          echo "$SHA1" > firebase-debug-sha1.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add firebase-debug-sha1.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "Record stable Firebase debug SHA-1"
+            git push
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: Saqib-Finance-APK
