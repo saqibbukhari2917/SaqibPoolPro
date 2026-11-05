@@ -740,6 +740,22 @@ public class AimCaptureService extends Service {
         return count;
     }
 
+    private boolean linePassesNearPoint(
+            Line line, float px, float py, float tolerance) {
+        float dx = line.x2 - line.x1;
+        float dy = line.y2 - line.y1;
+        float lengthSquared = dx * dx + dy * dy;
+        if (lengthSquared < 1f) return false;
+        float t = ((px - line.x1) * dx + (py - line.y1) * dy)
+                / lengthSquared;
+        // Permit a modest extrapolation because Hough fragments can stop
+        // just short of the visible reticle intersection.
+        if (t < -0.45f || t > 1.45f) return false;
+        float qx = line.x1 + t * dx;
+        float qy = line.y1 + t * dy;
+        return Math.hypot(px - qx, py - qy) <= tolerance;
+    }
+
     private float[] buildExtendedGuide(
             List<Line> lines, List<Point> points,
             int width, int height) {
@@ -761,32 +777,39 @@ public class AimCaptureService extends Service {
         float bestAOuterX = 0f, bestAOuterY = 0f;
         float bestBOuterX = 0f, bestBOuterY = 0f;
 
-        // The live aiming reticle is a multi-spoke graphic: several
-        // detected segments terminate at the same small center. Real
-        // post-contact prediction guides form a pair, not a 3+ ray hub.
-        // Mark endpoints shared by at least three distinct segments and
-        // exclude those reticle segments before trying to pair collision
-        // guides. This uses only frame geometry, never fixed screen sides.
+        // Reject only segments that terminate at a true multi-direction
+        // reticle hub. A simple shared-endpoint test was too aggressive and
+        // removed valid short guides. Here, two other differently-directed
+        // detected lines must geometrically pass through the same endpoint.
         List<Line> eligible = new ArrayList<>();
         for (Line candidate : lines) {
-            int hubMatches = 0;
+            boolean reticleSpoke = false;
             float[][] ends = {
                     {candidate.x1, candidate.y1},
                     {candidate.x2, candidate.y2}
             };
             for (float[] end : ends) {
-                int nearbySegments = 0;
+                List<Float> hubAngles = new ArrayList<>();
                 for (Line other : lines) {
                     if (other == candidate) continue;
-                    float d1 = (float) Math.hypot(end[0] - other.x1,
-                            end[1] - other.y1);
-                    float d2 = (float) Math.hypot(end[0] - other.x2,
-                            end[1] - other.y2);
-                    if (Math.min(d1, d2) <= 20f) nearbySegments++;
+                    if (linePassesNearPoint(other, end[0], end[1], 10f)) {
+                        float angle = other.angle();
+                        boolean distinct = true;
+                        for (Float known : hubAngles) {
+                            if (angleDifference(known, angle) < 18f) {
+                                distinct = false;
+                                break;
+                            }
+                        }
+                        if (distinct) hubAngles.add(angle);
+                    }
                 }
-                if (nearbySegments >= 2) hubMatches++;
+                if (hubAngles.size() >= 2) {
+                    reticleSpoke = true;
+                    break;
+                }
             }
-            if (hubMatches == 0) eligible.add(candidate);
+            if (!reticleSpoke) eligible.add(candidate);
         }
 
         for (int i = 0; i < eligible.size(); i++) {
