@@ -319,7 +319,7 @@ public class AimCaptureService extends Service {
                 float[] extendedGuide = saturatedMask
                         ? null
                         : buildExtendedGuide(
-                                lines, points, imageWidth, imageHeight);
+                                image, lines, points, imageWidth, imageHeight);
                 sendLines(extendedGuide, imageWidth, imageHeight);
 
                 if (now - lastNotificationTime >= 1500) {
@@ -756,8 +756,55 @@ public class AimCaptureService extends Service {
         return Math.hypot(px - qx, py - qy) <= tolerance;
     }
 
+    // Checks the color at the midpoint between two detected white-line ends.
+    // Pool cloth is cyan; real balls have a different hue.
+    private boolean isColoredBallAt(Image image, float x, float y) {
+        if (image == null) return false;
+        Image.Plane[] planes = image.getPlanes();
+        if (planes == null || planes.length == 0) return false;
+
+        Image.Plane plane = planes[0];
+        ByteBuffer buffer = plane.getBuffer().duplicate();
+        int rowStride = plane.getRowStride();
+        int pixelStride = plane.getPixelStride();
+        int coloredSamples = 0;
+
+        for (int dy = -8; dy <= 8; dy += 4) {
+            for (int dx = -8; dx <= 8; dx += 4) {
+                int sx = Math.round(x + dx);
+                int sy = Math.round(y + dy);
+                if (sx < 0 || sy < 0 ||
+                        sx >= image.getWidth() || sy >= image.getHeight()) continue;
+
+                int pos = sy * rowStride + sx * pixelStride;
+                if (pos < 0 || pos + 2 >= buffer.limit()) continue;
+
+                int rr = buffer.get(pos) & 255;
+                int gg = buffer.get(pos + 1) & 255;
+                int bb = buffer.get(pos + 2) & 255;
+                int max = Math.max(rr, Math.max(gg, bb));
+                int min = Math.min(rr, Math.min(gg, bb));
+                if (max < 95 || max - min < 48) continue;
+
+                float hue;
+                if (max == rr) {
+                    hue = 60f * ((gg - bb) / (float) Math.max(1, max - min));
+                    if (hue < 0) hue += 360f;
+                } else if (max == gg) {
+                    hue = 60f * (2f + (bb - rr) / (float) Math.max(1, max - min));
+                } else {
+                    hue = 60f * (4f + (rr - gg) / (float) Math.max(1, max - min));
+                }
+
+                // Reject the cyan/blue-green table cloth, but keep ball colors.
+                if (hue < 170f || hue > 205f) coloredSamples++;
+            }
+        }
+        return coloredSamples >= 4;
+    }
+
     private float[] buildExtendedGuide(
-            List<Line> lines, List<Point> points,
+            Image image, List<Line> lines, List<Point> points,
             int width, int height) {
 
         if (lines == null || lines.size() < 2 || points == null) return null;
@@ -782,23 +829,23 @@ public class AimCaptureService extends Service {
         List<Line> eligible = new ArrayList<>();
         for (Line candidate : lines) {
             float length = candidate.length();
-            if (length >= 14f && length <= 190f) {
-                eligible.add(candidate);
-            }
+            // Prediction rays can be short or already extend far from the ball.
+            // The incoming cue line is excluded by the two-endpoints-at-one-ball test.
+            if (length >= 60f && length <= 1000f) eligible.add(candidate);
         }
 
         for (int i = 0; i < eligible.size(); i++) {
             Line a = eligible.get(i);
             float lenA = a.length();
-            if (lenA < 14f || lenA > 190f) continue;
+            if (lenA < 60f || lenA > 1000f) continue;
 
             for (int j = i + 1; j < eligible.size(); j++) {
                 Line b = eligible.get(j);
                 float lenB = b.length();
-                if (lenB < 14f || lenB > 190f) continue;
+                if (lenB < 60f || lenB > 1000f) continue;
 
                 float angle = angleDifference(a.angle(), b.angle());
-                if (angle < 32f) continue;
+                if (angle < 25f) continue;
 
                 float[][] ae = {{a.x1, a.y1}, {a.x2, a.y2}};
                 float[][] be = {{b.x1, b.y1}, {b.x2, b.y2}};
@@ -813,10 +860,14 @@ public class AimCaptureService extends Service {
                         // edges of the colored contact ball, not at one
                         // identical pixel. Allow a ball-sized gap; this is
                         // independent of screen position and shot direction.
-                        if (gap < 24f || gap > 92f) continue;
+                        if (gap < 18f || gap > 58f) continue;
 
                         float ox = (ax + bx) * 0.5f;
                         float oy = (ay + by) * 0.5f;
+
+                        // The two white guide fragments must meet across
+                        // the colored object ball, not at the cue reticle.
+                        if (!isColoredBallAt(image, ox, oy)) continue;
 
                         int ao = 1 - ai;
                         int bo = 1 - bi;
@@ -828,7 +879,7 @@ public class AimCaptureService extends Service {
                         // a white center: the ball itself is colored.
                         int markerSupport = whitePointsNear(points, ox, oy);
 
-                        float score = Math.abs(gap - 56f) * 1.2f
+                        float score = Math.abs(gap - 34f) * 1.5f
                                 - markerSupport * 0.15f
                                 - Math.min(a.votes, b.votes) * 0.015f
                                 + Math.abs(lenA - lenB) * 0.02f;
@@ -854,7 +905,7 @@ public class AimCaptureService extends Service {
 
         // Reject nearly parallel/duplicate segments even if Hough produced
         // slightly different endpoints for the same physical guide.
-        if (angleDifference(bestA.angle(), bestB.angle()) < 32f) return null;
+        if (angleDifference(bestA.angle(), bestB.angle()) < 25f) return null;
 
         float left = width * 0.195f;
         float right = width * 0.805f;
