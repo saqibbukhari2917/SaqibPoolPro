@@ -435,7 +435,7 @@ public class MainActivity extends FragmentActivity {
         String category,item,description,amount;
         LinearLayout summary;
     }
-    private void updateExpenseEntrySummary(ExpenseEntryRow entry){
+    private void updateExpenseEntrySummary(ExpenseEntryRow entry,ArrayList<ExpenseEntryRow> entries,LinearLayout entriesContainer,TextView totalText){
         if(entry.summary==null)return;
         entry.summary.removeAllViews();
         LinearLayout details=col();
@@ -472,7 +472,7 @@ public class MainActivity extends FragmentActivity {
             entry.category=cat.getSelectedItem().toString();entry.item=item.getSelectedItem()==null?"No item":item.getSelectedItem().toString();
             entry.description=desc.getText().toString().trim();entry.amount=String.valueOf(value);
             if(editing==null){entries.add(entry);entry.summary=row();entry.summary.setPadding(dp(10),dp(5),dp(7),dp(5));entry.summary.setBackground(shape(bg,11));LinearLayout.LayoutParams rp=lp(-1,58);rp.bottomMargin=dp(7);entriesContainer.addView(entry.summary,rp);}
-            updateExpenseEntrySummary(entry);
+            updateExpenseEntrySummary(entry,entries,entriesContainer,totalText);
             entry.summary.setOnClickListener(x->showExpenseItemEditor(entries,entriesContainer,totalText,entry,entry.category,entry.item));
             refreshExpenseEntryTotal(entries,totalText);dialog.dismiss();
         }));
