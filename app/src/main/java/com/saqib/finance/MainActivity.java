@@ -38,6 +38,7 @@ public class MainActivity extends FragmentActivity {
     private boolean cloudSyncInProgress=false;
     private static final String[] CATS={"Kids","Wife","Family","Personal","Medicine","Grocery","Transport","Bills","Shopping","Dining","Other"};
     private static final int GREEN=0xFF2463D9, DEEP=0xFF174A9C, GOLD=0xFF5B8FE8, MINT=0xFFEAF2FF;
+    private AlertDialog[] dialogHolder=new AlertDialog[1];
     private boolean categoryGridView=true; private DB db; private LinearLayout root,body,nav,homeBrandBar; private ScrollView pageScroll; private GestureDetector swipeDetector; private int page=0; private boolean dark=false;
     private Calendar month=Calendar.getInstance(); private String from="",to="",category="All categories",selectedAddCategory="Grocery",pendingItemName="",pendingReminderCategory="Other"; private boolean reminderFlow=false;
     private TextView totalText,countText,monthText,pendingCloudText; private LinearLayout historyList;
