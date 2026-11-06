@@ -952,10 +952,10 @@ public class MainActivity extends FragmentActivity {
         }
         categoryScreen.addView(categoryGrid,lp(-1,-2));
 
-        TextView itemBack=txt("‹  Categories",14,BLUE,true);itemBack.setPadding(0,dp(4),0,dp(10));itemScreen.addView(itemBack);itemBack.setOnClickListener(v->{itemScreen.setVisibility(View.GONE);categoryScreen.setVisibility(View.VISIBLE);});
+        TextView itemBack=txt("‹  Categories",14,GREEN,true);itemBack.setPadding(0,dp(4),0,dp(10));itemScreen.addView(itemBack);itemBack.setOnClickListener(v->{itemScreen.setVisibility(View.GONE);categoryScreen.setVisibility(View.VISIBLE);});
 
         LinearLayout formScreen=col();formScreen.setVisibility(View.GONE);c.addView(formScreen,lp(-1,-2));
-        TextView formBack=txt("‹  Items",14,BLUE,true);formBack.setPadding(0,dp(4),0,dp(10));formScreen.addView(formBack);formBack.setOnClickListener(v->{formScreen.setVisibility(View.GONE);itemScreen.setVisibility(View.VISIBLE);});
+        TextView formBack=txt("‹  Items",14,GREEN,true);formBack.setPadding(0,dp(4),0,dp(10));formScreen.addView(formBack);formBack.setOnClickListener(v->{formScreen.setVisibility(View.GONE);itemScreen.setVisibility(View.VISIBLE);});
         TextView formTitle=txt("Reminder Details",17,ink,true);formScreen.addView(formTitle);
         EditText price=new EditText(this);price.setSingleLine(true);price.setInputType(8194);price.setHint("Amount (PKR)");formScreen.addView(price,lp(-1,50));
         TextView date=txt(display.format(when.getTime()),14,ink,true);date.setPadding(dp(12),dp(12),dp(12),dp(12));date.setBackground(shape(bg,10));LinearLayout.LayoutParams dateLp=lp(-1,46);dateLp.topMargin=dp(8);formScreen.addView(date,dateLp);
