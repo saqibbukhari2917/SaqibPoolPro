@@ -141,21 +141,32 @@ public class MainActivity extends FragmentActivity {
     private void addRecent(LinearLayout target,int limit){Cursor q=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date FROM expenses ORDER BY date DESC,id DESC LIMIT "+limit,null);if(!q.moveToFirst()){TextView e=txt("No expenses yet. Add your first expense.",13,muted,false);e.setPadding(0,dp(18),0,dp(12));target.addView(e);}else do{String cat=q.getString(0),desc=q.getString(1);LinearLayout r=row();TextView left=txt(cat+(desc.isEmpty()?"":" · "+desc),13,ink,true);r.addView(left,new LinearLayout.LayoutParams(0,-2,1));r.addView(txt(money(q.getDouble(2)),13,GREEN,true));target.addView(r,lp(-1,43));View d=new View(this);d.setBackgroundColor(line);target.addView(d,lp(-1,1));}while(q.moveToNext());q.close();}
 
     private void categoryItemsPage(String cat){
-        pageHeader(cat,"Choose an item or add your own");LinearLayout c=content();LinearLayout panel=card(c);
+        pageHeader(cat,"Choose an item or add your own");
+        LinearLayout c=content();
+        LinearLayout panel=card(c);
         panel.addView(txt("ITEMS IN "+cat.toUpperCase(Locale.US),11,GOLD,true));
-        Button add=primaryButton("+  New Item");LinearLayout.LayoutParams al=lp(-1,46);al.topMargin=dp(10);panel.addView(add,al);add.setOnClickListener(v->showNewItemDialog(cat));
-        LinearLayout viewBar=row();viewBar.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);viewBar.setPadding(0,dp(10),0,dp(8));
-        Button gridBtn=smallFilter("▦  Grid"),listBtn=smallFilter("☰  List");
-        gridBtn.setTextColor(categoryGridView?Color.WHITE:GREEN);gridBtn.setBackground(shape(categoryGridView?GREEN:MINT,9));
-        listBtn.setTextColor(!categoryGridView?Color.WHITE:GREEN);listBtn.setBackground(shape(!categoryGridView?GREEN:MINT,9));
-        viewBar.addView(gridBtn,lp(94,38));LinearLayout.LayoutParams bl=lp(94,38);bl.leftMargin=dp(7);viewBar.addView(listBtn,bl);panel.addView(viewBar);
-        gridBtn.setOnClickListener(v->{categoryGridView=true;showPage(5);});listBtn.setOnClickListener(v->{categoryGridView=false;showPage(5);});
+
+        LinearLayout viewBar=row();
+        viewBar.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        viewBar.setPadding(0,dp(2),0,dp(10));
+        Button gridBtn=smallFilter("▦  Grid View"),listBtn=smallFilter("☰  List View");
+        gridBtn.setTextColor(categoryGridView?Color.WHITE:GREEN);
+        gridBtn.setBackground(shape(categoryGridView?GREEN:MINT,9));
+        listBtn.setTextColor(!categoryGridView?Color.WHITE:GREEN);
+        listBtn.setBackground(shape(!categoryGridView?GREEN:MINT,9));
+        viewBar.addView(gridBtn,new LinearLayout.LayoutParams(0,dp(40),1));
+        LinearLayout.LayoutParams bl=new LinearLayout.LayoutParams(0,dp(40),1);bl.leftMargin=dp(8);
+        viewBar.addView(listBtn,bl);panel.addView(viewBar);
+        gridBtn.setOnClickListener(v->{categoryGridView=true;showPage(5);});
+        listBtn.setOnClickListener(v->{categoryGridView=false;showPage(5);});
+
         LinearLayout items=col();panel.addView(items);
-        ArrayList<Long> ids=new ArrayList<>();ArrayList<String> names=new ArrayList<>(),icons=new ArrayList<>();
+        ArrayList<Long> ids=new ArrayList<>();
+        ArrayList<String> names=new ArrayList<>(),icons=new ArrayList<>();
         Cursor q=db.getReadableDatabase().rawQuery("SELECT id,name,icon FROM category_items WHERE category=? ORDER BY name COLLATE NOCASE",new String[]{cat});
         while(q.moveToNext()){ids.add(q.getLong(0));names.add(q.getString(1));icons.add(q.getString(2));}q.close();
-        if(ids.isEmpty()){TextView empty=txt("No items yet. Tap New Item to add your first item.",13,muted,false);empty.setPadding(0,dp(16),0,dp(12));items.addView(empty);}
-        else if(categoryGridView){
+
+        if(categoryGridView){
             for(int i=0;i<ids.size();i+=2){
                 LinearLayout gridRow=row();LinearLayout.LayoutParams rp=lp(-1,-2);rp.topMargin=dp(4);items.addView(gridRow,rp);
                 for(int j=i;j<Math.min(i+2,ids.size());j++){
@@ -168,16 +179,76 @@ public class MainActivity extends FragmentActivity {
                     tile.setOnLongClickListener(v->{showMoveItemDialog(id,name,cat);return true;});
                 }
             }
+            LinearLayout addRow=row();LinearLayout.LayoutParams arp=lp(-1,-2);arp.topMargin=dp(8);items.addView(addRow,arp);
+            LinearLayout addTile=col();addTile.setGravity(Gravity.CENTER);addTile.setPadding(dp(8),dp(12),dp(8),dp(12));
+            addTile.setBackground(shape(surface,14));addTile.setElevation(dp(1));
+            addRow.addView(addTile,new LinearLayout.LayoutParams(0,dp(104),1));
+            TextView plus=txt("+",32,GREEN,true);plus.setGravity(Gravity.CENTER);addTile.addView(plus,lp(-1,40));
+            TextView addLabel=txt("New Item",13,GREEN,true);addLabel.setGravity(Gravity.CENTER);addTile.addView(addLabel);
+            addTile.setOnClickListener(v->showNewItemDialog(cat));
         }else{
             for(int i=0;i<ids.size();i++){
                 final long id=ids.get(i);final String name=names.get(i),ic=icons.get(i);
-                LinearLayout r=row();r.setPadding(dp(5),dp(9),dp(5),dp(9));r.addView(txt(ic==null?"📦":ic,24,ink,true),lp(42,42));r.addView(txt(name,14,ink,true),new LinearLayout.LayoutParams(0,-2,1));r.addView(txt("›",24,GREEN,true));
-                r.setOnClickListener(v->{selectedAddCategory=cat;pendingItemName=name;showPage(1);});r.setOnLongClickListener(v->{showMoveItemDialog(id,name,cat);return true;});items.addView(r);View sep=new View(this);sep.setBackgroundColor(line);items.addView(sep,lp(-1,1));
+                LinearLayout r=row();r.setPadding(dp(5),dp(9),dp(5),dp(9));
+                r.addView(txt(ic==null?"📦":ic,24,ink,true),lp(42,42));
+                r.addView(txt(name,14,ink,true),new LinearLayout.LayoutParams(0,-2,1));
+                r.addView(txt("›",24,GREEN,true));
+                r.setOnClickListener(v->{selectedAddCategory=cat;pendingItemName=name;showPage(1);});
+                r.setOnLongClickListener(v->{showMoveItemDialog(id,name,cat);return true;});
+                items.addView(r);View sep=new View(this);sep.setBackgroundColor(line);items.addView(sep,lp(-1,1));
             }
+            LinearLayout addRow=row();addRow.setGravity(Gravity.CENTER_VERTICAL);addRow.setPadding(dp(8),dp(10),dp(8),dp(10));
+            addRow.setBackground(shape(MINT,12));
+            addRow.addView(txt("+",26,GREEN,true),lp(42,42));
+            addRow.addView(txt("New Item",14,GREEN,true),new LinearLayout.LayoutParams(0,-2,1));
+            addRow.addView(txt("Add",12,GREEN,true));
+            addRow.setOnClickListener(v->showNewItemDialog(cat));items.addView(addRow,lp(-1,58));
         }
-        TextView hint=txt("Long-press an item to move it to another category or delete it.",11,muted,false);hint.setPadding(dp(4),dp(10),dp(4),dp(12));c.addView(hint);
+        TextView hint=txt("Long-press an item to move it to another category or delete it.",11,muted,false);
+        hint.setPadding(dp(4),dp(10),dp(4),dp(12));c.addView(hint);
     }
-    private void showNewItemDialog(String cat){EditText name=new EditText(this);name.setSingleLine(true);name.setHint("Enter item name");new AlertDialog.Builder(this).setTitle("New item · "+cat).setView(name).setNegativeButton("Cancel",null).setPositiveButton("Add",(d,w)->{String n=name.getText().toString().trim();if(n.isEmpty()){Toast.makeText(this,"Enter an item name",Toast.LENGTH_SHORT).show();return;}ContentValues cv=new ContentValues();cv.put("name",n);cv.put("category",cat);cv.put("icon",suggestItemIcon(n));long id=db.getWritableDatabase().insertWithOnConflict("category_items",null,cv,SQLiteDatabase.CONFLICT_IGNORE);if(id==-1)Toast.makeText(this,"Item already exists in this category",Toast.LENGTH_SHORT).show();showPage(5);}).show();}
+
+    private void showNewItemDialog(String cat){
+        LinearLayout box=col();box.setPadding(dp(4),dp(4),dp(4),0);
+        EditText name=new EditText(this);name.setSingleLine(true);name.setHint("Enter item name");box.addView(name,lp(-1,52));
+        LinearLayout iconRow=row();iconRow.setPadding(0,dp(8),0,dp(4));
+        TextView preview=txt("📦",34,ink,true);preview.setGravity(Gravity.CENTER);iconRow.addView(preview,lp(58,54));
+        LinearLayout iconActions=col();
+        Button choose=smallFilter("Choose icon");iconActions.addView(choose,lp(-1,40));
+        Button online=smallFilter("Browse online icons");LinearLayout.LayoutParams ol=lp(-1,38);ol.topMargin=dp(5);iconActions.addView(online,ol);
+        iconRow.addView(iconActions,new LinearLayout.LayoutParams(0,-2,1));box.addView(iconRow);
+        final String[] chosen={suggestItemIcon("")};
+        name.addTextChangedListener(new android.text.TextWatcher(){
+            public void beforeTextChanged(CharSequence s,int st,int count,int after){}
+            public void onTextChanged(CharSequence s,int st,int before,int count){if(chosen[0].equals("📦")){chosen[0]=suggestItemIcon(s.toString());preview.setText(chosen[0]);}}
+            public void afterTextChanged(android.text.Editable e){}
+        });
+        choose.setOnClickListener(v->showItemIconPicker(chosen,preview));
+        online.setOnClickListener(v->{String term=name.getText().toString().trim();String url="https://fonts.google.com/icons"+(term.isEmpty()?"":"?icon.query="+Uri.encode(term));try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}catch(Exception e){Toast.makeText(this,"Could not open icon catalogue",Toast.LENGTH_SHORT).show();}});
+        new AlertDialog.Builder(this).setTitle("New item · "+cat).setView(box).setNegativeButton("Cancel",null).setPositiveButton("Add",(d,w)->{
+            String n=name.getText().toString().trim();
+            if(n.isEmpty()){Toast.makeText(this,"Enter an item name",Toast.LENGTH_SHORT).show();return;}
+            ContentValues cv=new ContentValues();cv.put("name",n);cv.put("category",cat);cv.put("icon",chosen[0]);
+            long id=db.getWritableDatabase().insertWithOnConflict("category_items",null,cv,SQLiteDatabase.CONFLICT_IGNORE);
+            if(id==-1)Toast.makeText(this,"Item already exists in this category",Toast.LENGTH_SHORT).show();
+            showPage(5);
+        }).show();
+    }
+
+    private void showItemIconPicker(String[] chosen,TextView preview){
+        final String[] choices={"📦","⛽","🔧","🛞","🏍️","🚗","🧽","🅿️","🛣️","👟","👕","👗","💍","💄","🧴","🧒","🧸","📚","🎒","🥛","🥚","🍞","🍚","🫗","🧼","🍬","💊","🩺","🧪","🍽️","🎁","🏠","💡","💧","📱","💻","🧾","🛍️","✈️","🐾","⚽","🎮","🪑","🛏️","🔑","💰","❤️","⭐"};
+        GridView grid=new GridView(this);grid.setNumColumns(4);grid.setVerticalSpacing(dp(6));grid.setHorizontalSpacing(dp(6));grid.setPadding(dp(8),dp(8),dp(8),dp(8));
+        ArrayAdapter<String> adapter=new ArrayAdapter<String>(this,android.R.layout.simple_list_item_1,choices){
+            @Override public android.view.View getView(int position,android.view.View convert,android.view.ViewGroup parent){
+                TextView t=(TextView)super.getView(position,convert,parent);t.setTextSize(27);t.setGravity(Gravity.CENTER);t.setPadding(0,dp(5),0,dp(5));return t;
+            }
+        };
+        grid.setAdapter(adapter);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Choose an icon").setView(grid).setNegativeButton("Cancel",null).create();
+        grid.setOnItemClickListener((p,v,pos,id)->{chosen[0]=choices[pos];preview.setText(chosen[0]);dialog.dismiss();});
+        dialog.show();
+        dialog.getWindow().setLayout(-1,dp(430));
+    }
     private String suggestItemIcon(String name){String n=name.toLowerCase(Locale.US);
         if(n.contains("fuel")||n.contains("petrol")||n.contains("diesel")||n.contains("gas"))return "⛽";
         if(n.contains("maintenance")||n.contains("repair")||n.contains("service")||n.contains("mechanic"))return "🔧";
