@@ -4,27 +4,30 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path android:fillColor="#FFFFFF" android:pathData="M0,0h108v108h-108z"/>
-    <!-- Receipt sheet -->
-    <path android:fillColor="#FFD99B" android:strokeColor="#111111" android:strokeWidth="4" android:strokeLineJoin="round"
-        android:pathData="M24,10h43l17,17v55h-60z"/>
-    <path android:fillColor="#FFB74D" android:strokeColor="#111111" android:strokeWidth="3"
-        android:pathData="M67,10v18h17z"/>
-    <path android:fillColor="#111111" android:pathData="M34,35h27v4h-27zM34,44h10v4h-10zM49,44h18v4h-18z"/>
-    <path android:fillColor="#FFB300" android:strokeColor="#111111" android:strokeWidth="2.5"
-        android:pathData="M45,53c-5,-4 -13,-2 -13,4c0,5 6,6 11,8c6,2 7,9 1,12c-5,3 -12,1 -15,-2l3,-4c3,3 8,4 11,2c3,-2 2,-5 -2,-7c-7,-3 -13,-5 -13,-12c0,-8 9,-12 18,-8z"/>
-    <!-- Calculator body -->
-    <path android:fillColor="#57D38C" android:strokeColor="#111111" android:strokeWidth="4"
-        android:pathData="M59,49h36c7,0 11,5 11,12v34c0,7 -4,11 -11,11h-36c-7,0 -11,-4 -11,-11v-34c0,-7 4,-12 11,-12z"/>
-    <path android:fillColor="#039BE5" android:strokeColor="#111111" android:strokeWidth="3.5"
-        android:pathData="M61,58h31c3,0 5,2 5,5v7c0,3 -2,5 -5,5h-31c-3,0 -5,-2 -5,-5v-7c0,-3 2,-5 5,-5z"/>
-    <path android:fillColor="#008B55" android:strokeColor="#111111" android:strokeWidth="2.5"
-        android:pathData="M59,81h8v8h-8zM73,81h8v8h-8zM87,81h7v8h-7zM59,94h8v7h-8zM73,94h8v7h-8z"/>
-    <path android:fillColor="#FF9800" android:strokeColor="#111111" android:strokeWidth="2"
-        android:pathData="M87,94h7v7h-7z"/>
-    <!-- Coin stack -->
-    <path android:fillColor="#FF9800" android:strokeColor="#111111" android:strokeWidth="2.5"
-        android:pathData="M10,84c0,-4 8,-7 17,-7s17,3 17,7v6c0,4 -8,7 -17,7s-17,-3 -17,-7zM10,74c0,-4 8,-7 17,-7s17,3 17,7s-8,7 -17,7s-17,-3 -17,-7z"/>
-    <path android:fillColor="#FFC107" android:strokeColor="#111111" android:strokeWidth="2.5"
-        android:pathData="M13,91c0,4 6,6 14,6s14,-2 14,-6v5c0,4 -6,6 -14,6s-14,-2 -14,-6z"/>
+
+    <!-- Rounded blue brand background -->
+    <path
+        android:fillColor="#6F9FE6"
+        android:pathData="M18,0h72c9.94,0 18,8.06 18,18v72c0,9.94 -8.06,18 -18,18h-72c-9.94,0 -18,-8.06 -18,-18v-72c0,-9.94 8.06,-18 18,-18z" />
+
+    <!-- Soft inner blue panel -->
+    <path
+        android:fillColor="#527FCB"
+        android:pathData="M18,8h72c5.52,0 10,4.48 10,10v72c0,5.52 -4.48,10 -10,10h-72c-5.52,0 -10,-4.48 -10,-10v-72c0,-5.52 4.48,-10 10,-10z" />
+
+    <!-- Bold white S monogram -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M70,28c-6,-7 -15,-10 -26,-10c-17,0 -28,9 -28,23c0,13 9,19 25,23l10,3c8,2 11,5 11,10c0,6 -6,10 -15,10c-9,0 -17,-4 -23,-11l-12,13c8,10 20,15 35,15c19,0 32,-10 32,-27c0,-13 -8,-21 -25,-26l-10,-3c-8,-2 -11,-5 -11,-9c0,-5 5,-8 12,-8c7,0 13,2 18,7z" />
+
+    <!-- Gold coin accent -->
+    <path
+        android:fillColor="#F7BD45"
+        android:pathData="M79,11a17,17 0,1 0,0 34a17,17 0,1 0,0 -34z" />
+    <path
+        android:fillColor="#FFE08A"
+        android:pathData="M79,15a13,13 0,1 0,0 26a13,13 0,1 0,0 -26z" />
+    <path
+        android:fillColor="#D99520"
+        android:pathData="M84,20c-2,-2 -5,-3 -8,-2c-4,1 -6,5 -4,8c1,2 3,3 7,4c3,1 4,2 4,4c0,3 -3,5 -6,5c-3,0 -6,-1 -8,-4l-3,3c2,3 5,5 9,5v3h4v-3c5,-1 8,-4 8,-9c0,-4 -3,-7 -8,-8c-3,-1 -4,-2 -4,-3c0,-2 2,-3 4,-3c2,0 4,1 5,2z" />
 </vector>
