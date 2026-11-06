@@ -900,34 +900,82 @@ public class MainActivity extends FragmentActivity {
         }
     }
     private void remindersPage(){
-        pageHeader("Buy Reminders","Choose a category and item to remember");
-        LinearLayout c=content(),catCard=card(c);catCard.addView(txt("1. SELECT CATEGORY",11,muted,true));
-        LinearLayout grid=col();catCard.addView(grid);
-        LinearLayout itemCard=card(c);itemCard.addView(txt("2. SELECT ITEM",11,muted,true));
-        TextView selected=txt("No item selected",14,ink,true);itemCard.addView(selected);
-        LinearLayout itemList=col();itemCard.addView(itemList);
+        pageHeader("Buy Reminders","");
+
+        LinearLayout c=content();
         final String[] chosen={"",""};
+        Calendar when=Calendar.getInstance();
+        when.add(Calendar.HOUR_OF_DAY,1);
+
+        LinearLayout categoryScreen=col();
+        c.addView(categoryScreen,lp(-1,-2));
+        LinearLayout categoryGrid=col();
         String[] all=cats();
-        for(int i=0;i<all.length;i+=2){LinearLayout r=row();LinearLayout.LayoutParams rp=lp(-1,64);rp.topMargin=dp(5);grid.addView(r,rp);
-            for(int j=i;j<Math.min(i+2,all.length);j++){String cat=all[j];LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setBackground(shape(surface,11));LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,-1,1);if(j>i)tp.leftMargin=dp(6);r.addView(tile,tp);
-                TextView ic=txt(getPreferences(0).getString("category_icon_"+cat,"📁"),20,ink,true);ic.setGravity(Gravity.CENTER);tile.addView(ic);TextView nm=txt(cat,11,ink,true);nm.setGravity(Gravity.CENTER);tile.addView(nm);
-                tile.setOnClickListener(v->{chosen[0]=cat;chosen[1]="";selected.setText("Choose an item from "+cat);itemList.removeAllViews();Cursor q=db.getReadableDatabase().rawQuery("SELECT name,icon FROM category_items WHERE category=? ORDER BY name COLLATE NOCASE",new String[]{cat});while(q.moveToNext()){String name=q.getString(0),icon=q.getString(1);LinearLayout rr=row();rr.setPadding(dp(6),dp(5),dp(6),dp(5));TextView ii=txt(icon==null||icon.isEmpty()?"📦":icon,21,ink,true);rr.addView(ii,lp(40,42));rr.addView(txt(name,13,ink,true),new LinearLayout.LayoutParams(0,-2,1));rr.addView(txt("›",20,muted,true));rr.setOnClickListener(w->{chosen[1]=name;selected.setText((icon==null?"📦":icon)+"  "+cat+" · "+name);});itemList.addView(rr,lp(-1,48));}q.close();if(itemList.getChildCount()==0)itemList.addView(txt("No saved items in this category yet.",12,muted,false));});
-            }}
-        LinearLayout priceCard=card(c);priceCard.addView(txt("3. ESTIMATED PRICE (PKR)",11,muted,true));EditText price=new EditText(this);price.setSingleLine(true);price.setInputType(8194);price.setHint("Estimated price");priceCard.addView(price,lp(-1,48));
-        Calendar when=Calendar.getInstance();when.add(Calendar.HOUR_OF_DAY,1);LinearLayout timeCard=card(c);timeCard.addView(txt("4. REMINDER DATE & TIME",11,muted,true));
-        TextView date=txt(display.format(when.getTime()),14,ink,true);date.setPadding(dp(12),dp(12),dp(12),dp(12));date.setBackground(shape(bg,10));timeCard.addView(date,lp(-1,46));
+        for(int i=0;i<all.length;i+=2){
+            LinearLayout r=row();
+            LinearLayout.LayoutParams rp=lp(-1,76);rp.topMargin=dp(6);categoryGrid.addView(r,rp);
+            for(int j=i;j<Math.min(i+2,all.length);j++){
+                String cat=all[j];
+                LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setBackground(shape(surface,12));
+                LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,-1,1);if(j>i)tp.leftMargin=dp(7);r.addView(tile,tp);
+                TextView ic=txt(getPreferences(0).getString("category_icon_"+cat,"📁"),25,ink,true);ic.setGravity(Gravity.CENTER);tile.addView(ic);
+                TextView nm=txt(cat,13,ink,true);nm.setGravity(Gravity.CENTER);tile.addView(nm);
+                tile.setOnClickListener(v->{
+                    chosen[0]=cat;chosen[1]="";
+                    categoryScreen.setVisibility(View.GONE);
+                    itemScreen.setVisibility(View.VISIBLE);
+                    itemTitle.setText(cat);
+                    itemGrid.removeAllViews();
+                    Cursor q=db.getReadableDatabase().rawQuery("SELECT name,icon FROM category_items WHERE category=? ORDER BY name COLLATE NOCASE",new String[]{cat});
+                    int count=0;
+                    while(q.moveToNext()){
+                        final String name=q.getString(0);
+                        final String icon=q.getString(1)==null||q.getString(1).isEmpty()?"📦":q.getString(1);
+                        if(count%2==0){currentItemRow[0]=row();LinearLayout.LayoutParams irp=lp(-1,76);irp.topMargin=dp(6);itemGrid.addView(currentItemRow[0],irp);}
+                        LinearLayout item=col();item.setGravity(Gravity.CENTER);item.setBackground(shape(surface,12));
+                        LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(0,-1,1);if(count%2==1)ip.leftMargin=dp(7);currentItemRow[0].addView(item,ip);
+                        TextView itemIcon=txt(icon,24,ink,true);itemIcon.setGravity(Gravity.CENTER);item.addView(itemIcon);
+                        TextView itemName=txt(name,12,ink,true);itemName.setGravity(Gravity.CENTER);item.addView(itemName);
+                        item.setOnClickListener(w->{chosen[1]=name;selectedItem.setText(icon+"  "+name);doneButton.setEnabled(true);});
+                        count++;
+                    }
+                    q.close();
+                    if(count==0)itemGrid.addView(txt("No items in this category yet.",13,muted,false));
+                });
+            }
+        }
+        categoryScreen.addView(categoryGrid,lp(-1,-2));
+
+        LinearLayout itemScreen=col();itemScreen.setVisibility(View.GONE);c.addView(itemScreen,lp(-1,-2));
+        TextView itemBack=txt("‹  Categories",14,BLUE,true);itemBack.setPadding(0,dp(4),0,dp(10));itemScreen.addView(itemBack);itemBack.setOnClickListener(v->{itemScreen.setVisibility(View.GONE);categoryScreen.setVisibility(View.VISIBLE);});
+        TextView itemTitle=txt("",17,ink,true);itemScreen.addView(itemTitle);
+        LinearLayout itemGrid=col();itemScreen.addView(itemGrid,lp(-1,-2));
+        final LinearLayout[] currentItemRow={null};
+        TextView selectedItem=txt("Select An Item",13,muted,true);selectedItem.setPadding(dp(4),dp(12),dp(4),dp(8));itemScreen.addView(selectedItem);
+        Button doneButton=primaryButton("Done");doneButton.setEnabled(false);itemScreen.addView(doneButton,lp(-1,46));
+
+        LinearLayout formScreen=col();formScreen.setVisibility(View.GONE);c.addView(formScreen,lp(-1,-2));
+        TextView formBack=txt("‹  Items",14,BLUE,true);formBack.setPadding(0,dp(4),0,dp(10));formScreen.addView(formBack);formBack.setOnClickListener(v->{formScreen.setVisibility(View.GONE);itemScreen.setVisibility(View.VISIBLE);});
+        TextView formTitle=txt("Reminder Details",17,ink,true);formScreen.addView(formTitle);
+        EditText price=new EditText(this);price.setSingleLine(true);price.setInputType(8194);price.setHint("Amount (PKR)");formScreen.addView(price,lp(-1,50));
+        TextView date=txt(display.format(when.getTime()),14,ink,true);date.setPadding(dp(12),dp(12),dp(12),dp(12));date.setBackground(shape(bg,10));LinearLayout.LayoutParams dateLp=lp(-1,46);dateLp.topMargin=dp(8);formScreen.addView(date,dateLp);
         date.setOnClickListener(v->{Calendar x=(Calendar)when.clone();new DatePickerDialog(this,(p,y,mo,d)->{when.set(y,mo,d);date.setText(display.format(when.getTime()));},x.get(Calendar.YEAR),x.get(Calendar.MONTH),x.get(Calendar.DAY_OF_MONTH)).show();});
-        TextView clock=txt(new SimpleDateFormat("hh:mm a",Locale.ENGLISH).format(when.getTime()),14,ink,true);clock.setPadding(dp(12),dp(12),dp(12),dp(12));clock.setBackground(shape(bg,10));LinearLayout.LayoutParams clp=lp(-1,46);clp.topMargin=dp(7);timeCard.addView(clock,clp);
+        TextView clock=txt(new SimpleDateFormat("hh:mm a",Locale.ENGLISH).format(when.getTime()),14,ink,true);clock.setPadding(dp(12),dp(12),dp(12),dp(12));clock.setBackground(shape(bg,10));LinearLayout.LayoutParams clockLp=lp(-1,46);clockLp.topMargin=dp(7);formScreen.addView(clock,clockLp);
         clock.setOnClickListener(v->new TimePickerDialog(this,(p,h,min)->{when.set(Calendar.HOUR_OF_DAY,h);when.set(Calendar.MINUTE,min);when.set(Calendar.SECOND,0);clock.setText(new SimpleDateFormat("hh:mm a",Locale.ENGLISH).format(when.getTime()));},when.get(Calendar.HOUR_OF_DAY),when.get(Calendar.MINUTE),false).show());
-        Button save=primaryButton("Add Reminder");LinearLayout.LayoutParams sp=lp(-1,48);sp.topMargin=dp(10);timeCard.addView(save,sp);
-        save.setOnClickListener(v->{if(chosen[1].isEmpty()){Toast.makeText(this,"Select a category and item",Toast.LENGTH_SHORT).show();return;}if(when.getTimeInMillis()<=System.currentTimeMillis()){Toast.makeText(this,"Choose a future date and time",Toast.LENGTH_SHORT).show();return;}
+        Button save=primaryButton("Add");LinearLayout.LayoutParams saveLp=lp(-1,48);saveLp.topMargin=dp(12);formScreen.addView(save,saveLp);
+
+        doneButton.setOnClickListener(v->{if(chosen[1].isEmpty())return;formTitle.setText(chosen[1]);itemScreen.setVisibility(View.GONE);formScreen.setVisibility(View.VISIBLE);});
+        save.setOnClickListener(v->{
+            if(chosen[1].isEmpty()){Toast.makeText(this,"Select an item first",Toast.LENGTH_SHORT).show();return;}
+            if(when.getTimeInMillis()<=System.currentTimeMillis()){Toast.makeText(this,"Choose a future date and time",Toast.LENGTH_SHORT).show();return;}
+            double estimate=0;String raw=price.getText().toString().trim();
+            if(!raw.isEmpty())try{estimate=Double.parseDouble(raw);if(estimate<0||Double.isInfinite(estimate)||Double.isNaN(estimate))throw new Exception();}catch(Exception e){price.setError("Enter a valid amount");return;}
             if(android.os.Build.VERSION.SDK_INT>=31&&!getSystemService(android.app.AlarmManager.class).canScheduleExactAlarms()){try{startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,android.net.Uri.parse("package:"+getPackageName())));}catch(Exception e){}Toast.makeText(this,"Allow alarms, then add reminder again",Toast.LENGTH_LONG).show();return;}
             if(android.os.Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},901);Toast.makeText(this,"Allow notifications, then add reminder again",Toast.LENGTH_LONG).show();return;}
-            double estimate=0;String raw=price.getText().toString().trim();if(!raw.isEmpty())try{estimate=Double.parseDouble(raw);if(estimate<0||Double.isInfinite(estimate)||Double.isNaN(estimate))throw new Exception();}catch(Exception e){price.setError("Enter a valid estimate");return;}
-            ContentValues cv=new ContentValues();cv.put("item",chosen[1]);cv.put("estimated_amount",estimate);cv.put("trigger_at",when.getTimeInMillis());cv.put("done",0);long id=db.getWritableDatabase().insert("reminders",null,cv);if(id>0){pushReminder(id);ReminderReceiver.schedule(this,id,chosen[1],when.getTimeInMillis());Toast.makeText(this,"Reminder added",Toast.LENGTH_SHORT).show();showPage(4);}
+            ContentValues cv=new ContentValues();cv.put("item",chosen[1]);cv.put("estimated_amount",estimate);cv.put("trigger_at",when.getTimeInMillis());cv.put("done",0);
+            long id=db.getWritableDatabase().insert("reminders",null,cv);
+            if(id>0){pushReminder(id);ReminderReceiver.schedule(this,id,chosen[1],when.getTimeInMillis());Toast.makeText(this,"Reminder added",Toast.LENGTH_SHORT).show();showPage(4);}
         });
-        LinearLayout list=card(c);list.addView(txt("UPCOMING REMINDERS",11,GOLD,true));Cursor q=db.getReadableDatabase().rawQuery("SELECT id,item,trigger_at,done,estimated_amount FROM reminders WHERE done=0 ORDER BY trigger_at",null);
-        if(!q.moveToFirst())list.addView(txt("No upcoming reminders.",13,muted,false));else do{long id=q.getLong(0),at=q.getLong(2);String name=q.getString(1);double est=q.getDouble(4);LinearLayout rr=row(),details=col();details.addView(txt(name,14,ink,true));details.addView(txt(new SimpleDateFormat("dd MMM yyyy · hh:mm a",Locale.ENGLISH).format(new Date(at)),11,muted,false));if(est>0)details.addView(txt("Estimated: "+money(est),11,GREEN,true));rr.addView(details,new LinearLayout.LayoutParams(0,-2,1));Button done=smallFilter("Done");rr.addView(done);done.setOnClickListener(v->confirmReminderPurchase(id,name,est));rr.setOnLongClickListener(v->{new AlertDialog.Builder(this).setMessage("Delete this reminder?").setNegativeButton("Cancel",null).setPositiveButton("Delete",(a,b)->{ReminderReceiver.cancel(this,id);db.getWritableDatabase().delete("reminders","id=?",new String[]{String.valueOf(id)});deleteCloudRecord("reminders",id);showPage(4);}).show();return true;});list.addView(rr,lp(-1,62));}while(q.moveToNext());q.close();
     }
 
     private void confirmReminderPurchase(long reminderId,String itemName,double estimated){
