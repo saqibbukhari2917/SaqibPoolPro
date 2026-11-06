@@ -18,6 +18,7 @@ import java.util.concurrent.Executor;
 import java.io.*;
 import org.json.*;
 import android.net.Uri;
+import android.webkit.*;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -237,20 +238,55 @@ public class MainActivity extends FragmentActivity {
 
     private void addItemIcon(LinearLayout parent,String icon,int size,LinearLayout.LayoutParams params){
         if(icon!=null&&icon.startsWith("@iconify:")){
-            ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.FIT_CENTER);parent.addView(image,params);
-            String key=icon.substring(9);String url="https://api.iconify.design/"+key.replace(":","/")+".png?color=%23"+(dark?"F1F4F0":"245B45");
-            new Thread(()->{try{File folder=new File(getFilesDir(),"iconify_cache");if(!folder.exists())folder.mkdirs();File cached=new File(folder,key.replace(":","_")+(dark?"_dark":"_light")+".png");Bitmap bitmap=null;if(cached.exists())bitmap=BitmapFactory.decodeFile(cached.getAbsolutePath());if(bitmap==null){java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL(url).openConnection();c.setConnectTimeout(7000);c.setReadTimeout(7000);c.setRequestProperty("User-Agent","SaqibFinance/1.0");try(InputStream input=c.getInputStream();FileOutputStream output=new FileOutputStream(cached)){byte[] buffer=new byte[4096];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);}finally{c.disconnect();}bitmap=BitmapFactory.decodeFile(cached.getAbsolutePath());}if(bitmap!=null){Bitmap ready=bitmap;runOnUiThread(()->image.setImageBitmap(ready));}}catch(Exception ignored){} }).start();
+            String key=icon.substring(9);
+            WebView web=new WebView(this);web.setBackgroundColor(Color.TRANSPARENT);web.setVerticalScrollBarEnabled(false);web.setHorizontalScrollBarEnabled(false);
+            web.getSettings().setJavaScriptEnabled(false);web.getSettings().setDomStorageEnabled(false);
+            parent.addView(web,params);
+            String src="https://api.iconify.design/"+key.replace(":","/")+".svg?color=%23"+(dark?"F1F4F0":"245B45");
+            String html="<html><meta name='viewport' content='width=device-width, initial-scale=1'><body style='margin:0;background:transparent;display:flex;align-items:center;justify-content:center;overflow:hidden'><img style='width:100%;height:100%;object-fit:contain' src='"+src+"'></body></html>";
+            web.loadDataWithBaseURL("https://api.iconify.design/",html,"text/html","UTF-8",null);
         }else{TextView t=txt(icon==null?"📦":icon,size,ink,true);t.setGravity(Gravity.CENTER);parent.addView(t,params);}
     }
     private void showOnlineIconPicker(String initial,String[] chosen,TextView preview,boolean[] manuallyChosen){
         LinearLayout box=col();box.setPadding(dp(8),dp(8),dp(8),dp(4));
         EditText query=new EditText(this);query.setSingleLine(true);query.setHint("Search online icons (e.g. car, home, food)");query.setText(initial);box.addView(query,lp(-1,50));
         Button search=smallFilter("Search icons");LinearLayout.LayoutParams sp=lp(-1,42);sp.topMargin=dp(6);box.addView(search,sp);
-        TextView status=txt("Search thousands of free icons. Internet required.",11,muted,false);status.setPadding(0,dp(8),0,dp(6));box.addView(status);
-        ScrollView scroll=new ScrollView(this);LinearLayout results=col();scroll.addView(results);box.addView(scroll,new LinearLayout.LayoutParams(-1,dp(300)));
+        TextView status=txt("Search free icons. Internet required.",11,muted,false);status.setPadding(0,dp(8),0,dp(6));box.addView(status);
+        WebView gallery=new WebView(this);gallery.setBackgroundColor(Color.TRANSPARENT);gallery.setVerticalScrollBarEnabled(true);gallery.setHorizontalScrollBarEnabled(false);
+        WebSettings settings=gallery.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(false);
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(gallery);box.addView(scroll,new LinearLayout.LayoutParams(-1,dp(330)));
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Online icon library").setView(box).setNegativeButton("Close",null).create();
-        Runnable runSearch=()->{String term=query.getText().toString().trim();if(term.isEmpty()){query.setError("Enter an icon name");return;}status.setText("Searching…");results.removeAllViews();new Thread(()->{ArrayList<String> found=new ArrayList<>();String error=null;try{String url="https://api.iconify.design/search?query="+Uri.encode(term)+"&limit=48";java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL(url).openConnection();c.setConnectTimeout(9000);c.setReadTimeout(9000);c.setRequestProperty("User-Agent","SaqibFinance/1.0");StringBuilder b=new StringBuilder();try(BufferedReader reader=new BufferedReader(new InputStreamReader(c.getInputStream()))){String line;while((line=reader.readLine())!=null)b.append(line);}c.disconnect();JSONArray arr=new JSONObject(b.toString()).optJSONArray("icons");if(arr!=null)for(int i=0;i<arr.length();i++)found.add(arr.getString(i));}catch(Exception e){error=e.getMessage();}final String err=error;runOnUiThread(()->{results.removeAllViews();if(err!=null){status.setText("Could not load icons. Check internet and try again.");return;}status.setText(found.isEmpty()?"No icons found. Try another word.":"Tap an icon to use it. "+found.size()+" results");for(String key:found){LinearLayout item=row();item.setPadding(dp(6),dp(5),dp(6),dp(5));item.setBackground(shape(MINT,10));LinearLayout.LayoutParams ip=lp(-1,54);ip.bottomMargin=dp(5);results.addView(item,ip);addItemIcon(item,"@iconify:"+key,26,lp(42,42));TextView label=txt(key,12,ink,true);item.addView(label,new LinearLayout.LayoutParams(0,-2,1));item.setOnClickListener(v->{chosen[0]="@iconify:"+key;manuallyChosen[0]=true;preview.setText("🌐");dialog.dismiss();Toast.makeText(this,"Online icon selected",Toast.LENGTH_SHORT).show();});}});}).start();};
-        search.setOnClickListener(v->runSearch.run());dialog.setOnShowListener(v->{dialog.getWindow().setLayout(-1,dp(540));if(!initial.trim().isEmpty())runSearch.run();});dialog.show();
+        gallery.addJavascriptInterface(new Object(){
+            @JavascriptInterface public void select(String key){
+                if(key==null||!key.matches("[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+"))return;
+                runOnUiThread(()->{chosen[0]="@iconify:"+key;manuallyChosen[0]=true;preview.setText("🌐");dialog.dismiss();Toast.makeText(MainActivity.this,"Online icon selected",Toast.LENGTH_SHORT).show();});
+            }
+        },"AndroidPicker");
+        Runnable runSearch=()->{
+            String term=query.getText().toString().trim();if(term.isEmpty()){query.setError("Enter an icon name");return;}
+            status.setText("Searching icons…");
+            new Thread(()->{
+                ArrayList<String> found=new ArrayList<>();String error=null;
+                try{
+                    String url="https://api.iconify.design/search?query="+Uri.encode(term)+"&limit=48";
+                    java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL(url).openConnection();
+                    c.setConnectTimeout(10000);c.setReadTimeout(10000);c.setRequestProperty("User-Agent","SaqibFinance/1.0");
+                    StringBuilder b=new StringBuilder();try(BufferedReader reader=new BufferedReader(new InputStreamReader(c.getInputStream()))){String line;while((line=reader.readLine())!=null)b.append(line);}finally{c.disconnect();}
+                    JSONArray arr=new JSONObject(b.toString()).optJSONArray("icons");if(arr!=null)for(int i=0;i<arr.length();i++){String k=arr.getString(i);if(k.matches("[a-zA-Z0-9_-]+:[a-zA-Z0-9_-]+"))found.add(k);}
+                }catch(Exception e){error=e.getMessage();}
+                final String err=error;
+                runOnUiThread(()->{
+                    if(err!=null){status.setText("Icons load nahi huay. Internet check karke dobara try karein.");gallery.loadData("<html><body style='font-family:sans-serif;text-align:center;color:#777'>Search failed. Please try again.</body></html>","text/html","UTF-8");return;}
+                    status.setText(found.isEmpty()?"No icons found. Try another word.":"Icon par tap karke select karein · "+found.size()+" results");
+                    StringBuilder html=new StringBuilder("<html><head><meta name='viewport' content='width=device-width, initial-scale=1'><style>body{margin:0;padding:6px;font-family:sans-serif;background:transparent}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.cell{min-height:82px;border-radius:10px;background:#EAF1E8;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px;box-sizing:border-box;overflow:hidden}.cell img{width:36px;height:36px;object-fit:contain}.name{font-size:10px;color:#245B45;text-align:center;word-break:break-all;margin-top:4px}</style></head><body><div class='grid'>");
+                    for(String key:found){String src="https://api.iconify.design/"+key.replace(":","/")+".svg?color=%23"+(dark?"123B2D":"245B45");html.append("<div class='cell' onclick=\"AndroidPicker.select('").append(key).append("')\"><img src='").append(src).append("'><div class='name'>").append(key.substring(key.indexOf(':')+1)).append("</div></div>");}
+                    html.append("</div></body></html>");gallery.loadDataWithBaseURL("https://api.iconify.design/",html.toString(),"text/html","UTF-8",null);
+                });
+            }).start();
+        };
+        search.setOnClickListener(v->runSearch.run());
+        dialog.setOnShowListener(v->{dialog.getWindow().setLayout(-1,dp(570));if(!initial.trim().isEmpty())runSearch.run();});
+        dialog.show();
     }
     private void showItemIconPicker(String[] chosen,TextView preview,boolean[] manuallyChosen){
         final String[] choices={"📦","⛽","🔧","🛞","🏍️","🚗","🧽","🅿️","🛣️","👟","👕","👗","💍","💄","🧴","🧒","🧸","📚","🎒","🥛","🥚","🍞","🍚","🫗","🧼","🍬","💊","🩺","🧪","🍽️","🎁","🏠","💡","💧","📱","💻","🧾","🛍️","✈️","🐾","⚽","🎮","🪑","🛏️","🔑","💰","❤️","⭐"};
