@@ -35,7 +35,7 @@ public class MainActivity extends FragmentActivity {
     private boolean cloudSyncInProgress=false;
     private static final String[] CATS={"Kids","Wife","Family","Personal","Medicine","Grocery","Transport","Bills","Shopping","Dining","Other"};
     private static final int GREEN=0xFF2463D9, DEEP=0xFF174A9C, GOLD=0xFF5B8FE8, MINT=0xFFEAF2FF;
-    private boolean categoryGridView=true; private DB db; private LinearLayout root,body,nav; private int page=0; private boolean dark=false;
+    private boolean categoryGridView=true; private DB db; private LinearLayout root,body,nav; private ScrollView pageScroll; private int page=0; private boolean dark=false;
     private Calendar month=Calendar.getInstance(); private String from="",to="",category="All categories",selectedAddCategory="Grocery",pendingItemName="",pendingReminderCategory="Other"; private boolean reminderFlow=false;
     private TextView totalText,countText,monthText,pendingCloudText; private LinearLayout historyList;
     private final SimpleDateFormat iso=new SimpleDateFormat("yyyy-MM-dd",Locale.US);
@@ -93,11 +93,11 @@ public class MainActivity extends FragmentActivity {
     private void buildShell(){
         root=col();root.setBackgroundColor(bg);setContentView(root);
         FrameLayout frame=new FrameLayout(this);root.addView(frame,new LinearLayout.LayoutParams(-1,0,1));
-        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);body=col();body.setPadding(0,0,0,dp(22));scroll.addView(body);frame.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
+        pageScroll=new ScrollView(this);pageScroll.setFillViewport(true);pageScroll.setVerticalScrollBarEnabled(false);body=col();body.setPadding(0,0,0,dp(22));pageScroll.addView(body);frame.addView(pageScroll,new FrameLayout.LayoutParams(-1,-1));
         nav=row();nav.setBackgroundColor(DEEP);nav.setPadding(dp(5),dp(8),dp(5),dp(8));root.addView(nav,lp(-1,66));
     }
     private void showPage(int p){
-        page=p;body.removeAllViews();nav.removeAllViews();body.setBackgroundColor(bg);
+        page=p;if(pageScroll!=null)pageScroll.scrollTo(0,0);body.removeAllViews();nav.removeAllViews();body.setBackgroundColor(bg);
         if(p==0)homePage();else if(p==1)addPage();else if(p==2)historyPage();else if(p==3)settingsPage();else if(p==4)remindersPage();else if(p==5)categoryItemsPage(selectedAddCategory);else if(p==6)balancePage();else if(p==7)reminderCategoryPage();else if(p==8)reminderItemsPage();else if(p==9)reminderDetailsPage();
         String[] labels={"Home","Add","History","Settings","Reminders"};String[] icons={"⌂","+","▤","⚙","◷"};
         for(int i=0;i<5;i++){final int index=i;LinearLayout item=col();item.setGravity(Gravity.CENTER);boolean active=(i==p)||(p==5&&i==1)||(p>=7&&i==4);TextView ic=txt(icons[i],22,active?GOLD:0xFFDCE8FA,true);ic.setGravity(Gravity.CENTER);TextView label=txt(labels[i],10,active?Color.WHITE:0xFFB8CBE8,active);label.setGravity(Gravity.CENTER);item.addView(ic);item.addView(label);item.setOnClickListener(v->{if(index!=4)reminderFlow=false;showPage(index);});nav.addView(item,new LinearLayout.LayoutParams(0,-1,1));}
