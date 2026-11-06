@@ -496,10 +496,10 @@ public class MainActivity extends FragmentActivity {
         totalText.setText("Total: "+money(total)+"  ·  "+entries.size()+" item"+(entries.size()==1?"":"s"));
     }
     private void addPage(){
-        pageHeader("Add expense","Tap + on a category, then choose its item");
+        pageHeader("Add expense","Choose categories and add their items");
         LinearLayout c=content();LinearLayout form=card(c);
         form.addView(txt("CATEGORIES",11,GOLD,true));
-        form.addView(txt("Tap + to open items",12,muted,false));
+        
         String[] categoryIcons={"🧒","💍","👨‍👩‍👧","🧴","💊","🛒","🏍️","🧾","🛍️","🍽️","📦"};
         LinearLayout categoryGrid=col();LinearLayout.LayoutParams gridLp=lp(-1,-2);gridLp.topMargin=dp(10);form.addView(categoryGrid,gridLp);
         LinearLayout itemsPanel=col();itemsPanel.setPadding(dp(10),dp(10),dp(10),dp(10));itemsPanel.setBackground(shape(bg,14));itemsPanel.setVisibility(View.GONE);
@@ -515,8 +515,7 @@ public class MainActivity extends FragmentActivity {
                 LinearLayout.LayoutParams tileLp=new LinearLayout.LayoutParams(0,dp(82),1);tileLp.leftMargin=dp(3);tileLp.rightMargin=dp(3);gridRow.addView(tile,tileLp);
                 TextView ico=txt(categoryIcons[index%categoryIcons.length],23,ink,true);ico.setGravity(Gravity.CENTER);tile.addView(ico,lp(-1,34));
                 TextView label=txt(cat,10,ink,true);label.setGravity(Gravity.CENTER);label.setSingleLine(true);label.setEllipsize(android.text.TextUtils.TruncateAt.END);tile.addView(label,lp(-1,20));
-                TextView plus=txt("+",19,GREEN,true);plus.setGravity(Gravity.CENTER);tile.addView(plus,lp(-1,20));
-                tile.setOnClickListener(v->{selectedAddCategory=cat;itemsPanel.setVisibility(View.VISIBLE);renderExpenseCategoryItems(cat,itemsPanel,entries,entriesContainer,total);});
+                tile.setOnClickListener(v->{selectedAddCategory=cat;categoryGrid.setVisibility(View.GONE);itemsPanel.setVisibility(View.VISIBLE);renderExpenseCategoryItems(cat,itemsPanel,entries,entriesContainer,total,categoryGrid);});
             }
             while(gridRow.getChildCount()<3){View spacer=new View(this);gridRow.addView(spacer,new LinearLayout.LayoutParams(0,dp(82),1));}
         }
@@ -546,7 +545,7 @@ public class MainActivity extends FragmentActivity {
             }catch(Exception e){Toast.makeText(this,"Could not save. Please check the date and amounts.",Toast.LENGTH_LONG).show();}
         });
     }
-    private void renderExpenseCategoryItems(String categoryName,LinearLayout panel,ArrayList<ExpenseEntryRow> entries,LinearLayout entriesContainer,TextView total){
+    private void renderExpenseCategoryItems(String categoryName,LinearLayout panel,ArrayList<ExpenseEntryRow> entries,LinearLayout entriesContainer,TextView total,LinearLayout categoryGrid){
         panel.removeAllViews();panel.addView(txt(categoryName+" ITEMS",11,GREEN,true));
         LinearLayout itemGrid=col();LinearLayout.LayoutParams igp=lp(-1,-2);igp.topMargin=dp(8);panel.addView(itemGrid,igp);
         Cursor q=db.getReadableDatabase().rawQuery("SELECT name,icon FROM category_items WHERE category=? ORDER BY name COLLATE NOCASE",new String[]{categoryName});
@@ -572,9 +571,14 @@ public class MainActivity extends FragmentActivity {
                 ContentValues values=new ContentValues();values.put("name",n);values.put("category",categoryName);values.put("icon",suggestItemIcon(n));
                 long id=db.getWritableDatabase().insertWithOnConflict("category_items",null,values,SQLiteDatabase.CONFLICT_IGNORE);
                 if(id>0)pushCategoryItem(id);else Toast.makeText(this,"This item already exists.",Toast.LENGTH_SHORT).show();
-                renderExpenseCategoryItems(categoryName,panel,entries,entriesContainer,total);
+                renderExpenseCategoryItems(categoryName,panel,entries,entriesContainer,total,categoryGrid);
             }).show();
         });
+        LinearLayout panelActions=row();LinearLayout.LayoutParams actionsLp=lp(-1,46);actionsLp.topMargin=dp(10);panel.addView(panelActions,actionsLp);
+        Button changeCategory=smallFilter("Change category");panelActions.addView(changeCategory,new LinearLayout.LayoutParams(0,-1,1));
+        Button done=primaryButton("Done");LinearLayout.LayoutParams doneLp=new LinearLayout.LayoutParams(0,-1,1);doneLp.leftMargin=dp(8);panelActions.addView(done,doneLp);
+        changeCategory.setOnClickListener(v->{panel.setVisibility(View.GONE);categoryGrid.setVisibility(View.VISIBLE);});
+        done.setOnClickListener(v->{panel.setVisibility(View.GONE);categoryGrid.setVisibility(View.GONE);Toast.makeText(this,"Items selected. Save expense when ready.",Toast.LENGTH_SHORT).show();});
     }
     private void showQuickExpenseAmountDialog(String categoryName,String itemName,ArrayList<ExpenseEntryRow> entries,LinearLayout entriesContainer,TextView total){
         LinearLayout box=col();box.setPadding(dp(5),dp(4),dp(5),0);
