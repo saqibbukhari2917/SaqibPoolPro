@@ -879,7 +879,7 @@ public class MainActivity extends FragmentActivity {
             super.onDraw(c);float w=getWidth(),h=getHeight(),cx=w/2f,cy=h/2f;
             float r=Math.min(w*.37f,h*.39f),start=-90;int i=0;
             if(total<=0){p.setColor(muted);p.setTextSize(dp(11));p.setTextAlign(Paint.Align.CENTER);c.drawText("No data yet",cx,cy,p);return;}
-            for(String cat:cats()){double v=data.get(cat);if(v>0){float sweep=(float)(v/total*360);p.setColor(colors[i]);c.drawArc(cx-r,cy-r,cx+r,cy+r,start,sweep,true,p);
+            for(String cat:cats()){double v=data.get(cat);if(v>0){float sweep=(float)(v/total*360);p.setColor(colors[i%colors.length]);c.drawArc(cx-r,cy-r,cx+r,cy+r,start,sweep,true,p);
                 if(sweep>=24){double mid=Math.toRadians(start+sweep/2);float tx=cx+(float)Math.cos(mid)*r*.72f,ty=cy+(float)Math.sin(mid)*r*.72f;
                     p.setColor(Color.WHITE);p.setTextAlign(Paint.Align.CENTER);p.setTextSize(dp(9));p.setTypeface(Typeface.create(Typeface.DEFAULT,Typeface.BOLD));c.drawText(Math.round(v/total*100)+"%",tx,ty+dp(3),p);p.setTypeface(Typeface.DEFAULT);}
                 start+=sweep;}i++;}
