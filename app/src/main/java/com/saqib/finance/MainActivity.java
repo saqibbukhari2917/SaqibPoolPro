@@ -430,6 +430,7 @@ public class MainActivity extends FragmentActivity {
     private void seedDefaultItems(){SQLiteDatabase sql=db.getWritableDatabase();Cursor c=sql.rawQuery("SELECT COUNT(*) FROM category_items",null);c.moveToFirst();boolean empty=c.getInt(0)==0;c.close();if(!empty)return;String[][] data={{"Wife","Clothes","Shoes","Makeup","Jewellery","Personal Care"},{"Kids","Clothes","Shoes","Toys","School","Books","Milk","Baby Care"},{"Grocery","Milk","Eggs","Soap","Bread","Sugar","Rice","Oil"},{"Medicine","Tablets","Syrup","Doctor Fee","Tests"},{"Family","Family Outing","Dinner","Gifts","Other"}};sql.beginTransaction();try{for(String[] g:data)for(int i=1;i<g.length;i++){ContentValues v=new ContentValues();v.put("category",g[0]);v.put("name",g[i]);v.put("icon",suggestItemIcon(g[i]));sql.insertWithOnConflict("category_items",null,v,SQLiteDatabase.CONFLICT_IGNORE);}sql.setTransactionSuccessful();}finally{sql.endTransaction();}}
     private Button smallButton(String s){Button b=new Button(this);b.setText(s);b.setTextSize(22);b.setTextColor(ink);b.setAllCaps(false);b.setBackground(shape(surface,10));return b;}
     private Button primaryButton(String s){Button b=new Button(this);b.setText(s);b.setTextSize(13);b.setTextColor(Color.WHITE);b.setAllCaps(false);b.setBackground(shape(GREEN,12));return b;}
+    // Trial-only multi-category purchase entry; grouping remains local until backup is updated.
     private class ExpenseEntryRow {
         LinearLayout panel;
         Spinner categorySpinner,itemSpinner;
