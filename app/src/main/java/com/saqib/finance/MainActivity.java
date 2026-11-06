@@ -591,7 +591,7 @@ public class MainActivity extends FragmentActivity {
     private void showQuickExpenseAmountDialog(String categoryName,String itemName,ArrayList<ExpenseEntryRow> entries,LinearLayout entriesContainer,TextView total){
         LinearLayout box=col();box.setPadding(dp(5),dp(4),dp(5),0);
         box.addView(txt(categoryName+"  ·  "+itemName,14,GREEN,true));
-        TextView amountLabel=txt("AMOUNT (PKR)  *",10,muted,true);amountLabel.setPadding(0,dp(10),0,0);box.addView(amountLabel);
+        TextView amountLabel=txt("AMOUNT (Rs.)  *",10,muted,true);amountLabel.setPadding(0,dp(10),0,0);box.addView(amountLabel);
         EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Enter amount");box.addView(amount,lp(-1,48));
         TextView descLabel=txt("DESCRIPTION (OPTIONAL)",10,muted,true);descLabel.setPadding(0,dp(8),0,0);box.addView(descLabel);
         EditText desc=new EditText(this);desc.setSingleLine(true);desc.setHint("Other detail");box.addView(desc,lp(-1,46));
@@ -821,7 +821,7 @@ public class MainActivity extends FragmentActivity {
             .setMessage("Every expense record on this phone and in your connected cloud backup will be permanently deleted. Reminders and saved item categories will not be deleted.")
             .setNegativeButton("Cancel",null).setPositiveButton("Delete all",(d,w)->deleteAllExpenseHistory()).show());
 
-        LinearLayout about=card(c);about.addView(txt("ABOUT",10,GOLD,true));about.addView(txt("Saqib Finance",18,ink,true));about.addView(txt("Family expense tracker · Offline storage · PKR",13,muted,false));about.addView(txt("Your records stay on this phone and sync to your Google account when connected. Sign in on a new phone to restore them.",12,muted,false));
+        LinearLayout about=card(c);about.addView(txt("ABOUT",10,GOLD,true));about.addView(txt("Saqib Finance",18,ink,true));about.addView(txt("Family expense tracker · Offline storage · Rs.",13,muted,false));about.addView(txt("Your records stay on this phone and sync to your Google account when connected. Sign in on a new phone to restore them.",12,muted,false));
     }
     private void setupGoogleSignIn(){GoogleSignInOptions o=new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestIdToken(getString(R.string.default_web_client_id)).requestEmail().build();googleSignInClient=GoogleSignIn.getClient(this,o);}
     private void startGoogleSignIn(){startActivityForResult(googleSignInClient.getSignInIntent(),REQUEST_GOOGLE_SIGN_IN);}
