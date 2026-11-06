@@ -32,6 +32,7 @@ public class MainActivity extends FragmentActivity {
     private static final String PREF_CLOUD_NETWORK="cloud_network";
     private GoogleSignInClient googleSignInClient;
     private ConnectivityManager.NetworkCallback cloudNetworkCallback;
+    private boolean cloudSyncInProgress=false;
     private static final String[] CATS={"Kids","Wife","Family","Personal","Medicine","Grocery","Transport","Bills","Shopping","Dining","Other"};
     private static final int GREEN=0xFF245B45, DEEP=0xFF123B2D, GOLD=0xFFE3B65C, MINT=0xFFEAF1E8;
     private boolean categoryGridView=true; private DB db; private LinearLayout root,body,nav; private int page=0; private boolean dark=false;
@@ -232,6 +233,7 @@ public class MainActivity extends FragmentActivity {
             ContentValues cv=new ContentValues();cv.put("name",n);cv.put("category",cat);cv.put("icon",chosen[0]);
             long id=db.getWritableDatabase().insertWithOnConflict("category_items",null,cv,SQLiteDatabase.CONFLICT_IGNORE);
             if(id==-1)Toast.makeText(this,"Item already exists in this category",Toast.LENGTH_SHORT).show();
+            else if(id>0)pushCategoryItem(id);
             showPage(5);
         }).show();
     }
@@ -318,7 +320,7 @@ public class MainActivity extends FragmentActivity {
         if(n.contains("makeup")||n.contains("care"))return "🧴";
         if(n.contains("tablet")||n.contains("syrup")||n.contains("doctor")||n.contains("test"))return "💊";
         if(n.contains("dinner")||n.contains("outing"))return "🍽️";if(n.contains("gift"))return "🎁";return "📦";}
-    private void showMoveItemDialog(long id,String name,String current){Spinner target=new Spinner(this);target.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));target.setSelection(Math.max(0,Arrays.asList(CATS).indexOf(current)));new AlertDialog.Builder(this).setTitle("Move "+name).setMessage("Choose the new category").setView(target).setNegativeButton("Cancel",null).setPositiveButton("Move",(d,w)->{String dest=target.getSelectedItem().toString();ContentValues cv=new ContentValues();cv.put("category",dest);db.getWritableDatabase().update("category_items",cv,"id=?",new String[]{String.valueOf(id)});selectedAddCategory=dest;showPage(5);Toast.makeText(this,"Item moved to "+dest,Toast.LENGTH_SHORT).show();}).setNeutralButton("Delete item",(d,w)->new AlertDialog.Builder(this).setMessage("Delete "+name+"?").setNegativeButton("Cancel",null).setPositiveButton("Delete",(x,y)->{db.getWritableDatabase().delete("category_items","id=?",new String[]{String.valueOf(id)});showPage(5);}).show()).show();}
+    private void showMoveItemDialog(long id,String name,String current){Spinner target=new Spinner(this);target.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));target.setSelection(Math.max(0,Arrays.asList(CATS).indexOf(current)));new AlertDialog.Builder(this).setTitle("Move "+name).setMessage("Choose the new category").setView(target).setNegativeButton("Cancel",null).setPositiveButton("Move",(d,w)->{String dest=target.getSelectedItem().toString();if(!dest.equals(current)){deleteCloudCategoryItem(current,name);ContentValues cv=new ContentValues();cv.put("category",dest);db.getWritableDatabase().update("category_items",cv,"id=?",new String[]{String.valueOf(id)});pushCategoryItem(id);}selectedAddCategory=dest;showPage(5);Toast.makeText(this,"Item moved to "+dest,Toast.LENGTH_SHORT).show();}).setNeutralButton("Delete item",(d,w)->new AlertDialog.Builder(this).setMessage("Delete "+name+"?").setNegativeButton("Cancel",null).setPositiveButton("Delete",(x,y)->{deleteCloudCategoryItem(current,name);db.getWritableDatabase().delete("category_items","id=?",new String[]{String.valueOf(id)});showPage(5);}).show()).show();}
     private void refreshKnownItemIcons(){
         SQLiteDatabase sql=db.getWritableDatabase();
         sql.execSQL("UPDATE category_items SET icon='⛽' WHERE lower(name) LIKE '%fuel%' OR lower(name) LIKE '%petrol%' OR lower(name) LIKE '%diesel%' OR lower(name) LIKE '%gas%'");
@@ -433,13 +435,83 @@ public class MainActivity extends FragmentActivity {
     private void setupGoogleSignIn(){GoogleSignInOptions o=new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestIdToken(getString(R.string.default_web_client_id)).requestEmail().build();googleSignInClient=GoogleSignIn.getClient(this,o);}
     private void startGoogleSignIn(){startActivityForResult(googleSignInClient.getSignInIntent(),REQUEST_GOOGLE_SIGN_IN);}
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){super.onActivityResult(requestCode,resultCode,data);if(requestCode==REQUEST_GOOGLE_SIGN_IN){try{GoogleSignInAccount a=GoogleSignIn.getSignedInAccountFromIntent(data).getResult(ApiException.class);AuthCredential c=GoogleAuthProvider.getCredential(a.getIdToken(),null);FirebaseAuth.getInstance().signInWithCredential(c).addOnSuccessListener(r->{Toast.makeText(this,"Google account connected",Toast.LENGTH_SHORT).show();syncAllCloud();showPage(3);}).addOnFailureListener(e->Toast.makeText(this,"Sign-in failed: "+e.getMessage(),Toast.LENGTH_LONG).show());}catch(ApiException e){Toast.makeText(this,"Google sign-in failed ("+e.getStatusCode()+")",Toast.LENGTH_LONG).show();}}}
-    private void registerCloudNetworkCallback(){try{ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);cloudNetworkCallback=new ConnectivityManager.NetworkCallback(){@Override public void onAvailable(Network n){runOnUiThread(()->applyCloudNetworkPreference());}@Override public void onLost(Network n){runOnUiThread(()->applyCloudNetworkPreference());}};cm.registerDefaultNetworkCallback(cloudNetworkCallback);}catch(Exception ignored){}}
+    private void registerCloudNetworkCallback(){try{ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);cloudNetworkCallback=new ConnectivityManager.NetworkCallback(){@Override public void onAvailable(Network n){runOnUiThread(()->{applyCloudNetworkPreference();if(cloudNetworkAllowed())syncAllCloud();});}@Override public void onLost(Network n){runOnUiThread(()->applyCloudNetworkPreference());}};cm.registerDefaultNetworkCallback(cloudNetworkCallback);}catch(Exception ignored){}}
+    private boolean cloudNetworkAllowed(){try{String mode=getPreferences(0).getString(PREF_CLOUD_NETWORK,"Wi-Fi + Mobile Data");if("Off".equals(mode))return false;ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);Network n=cm.getActiveNetwork();NetworkCapabilities c=n==null?null:cm.getNetworkCapabilities(n);if(c==null)return false;if("Wi-Fi only".equals(mode))return c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI);return c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);}catch(Exception e){return false;}}
     private void applyCloudNetworkPreference(){try{String mode=getPreferences(0).getString(PREF_CLOUD_NETWORK,"Wi-Fi + Mobile Data");FirebaseFirestore fs=FirebaseFirestore.getInstance();if("Off".equals(mode)){fs.disableNetwork();return;}if("Wi-Fi only".equals(mode)){ConnectivityManager cm=(ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);Network n=cm.getActiveNetwork();NetworkCapabilities c=n==null?null:cm.getNetworkCapabilities(n);if(c==null||!c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)){fs.disableNetwork();return;}}fs.enableNetwork();}catch(Exception ignored){}}
     @Override protected void onDestroy(){super.onDestroy();try{if(cloudNetworkCallback!=null)((ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE)).unregisterNetworkCallback(cloudNetworkCallback);}catch(Exception ignored){}}
     private String cloudUid(){return FirebaseAuth.getInstance().getCurrentUser().getUid();}
     private CollectionReference cloudCollection(String name){return FirebaseFirestore.getInstance().collection("users").document(cloudUid()).collection(name);}
-    private void syncAllCloud(){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;applyCloudNetworkPreference();cloudCollection("expenses").get().addOnSuccessListener(es->{SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();try{for(DocumentSnapshot d:es.getDocuments()){long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");Cursor c=sql.rawQuery("SELECT id FROM expenses WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("category",d.getString("category"));v.put("description",d.getString("description")==null?"":d.getString("description"));v.put("amount",d.getDouble("amount")==null?0:d.getDouble("amount"));v.put("date",d.getString("date"));sql.insert("expenses",null,v);}}sql.setTransactionSuccessful();}finally{sql.endTransaction();}cloudCollection("reminders").get().addOnSuccessListener(rs->{SQLiteDatabase rdb=db.getWritableDatabase();rdb.beginTransaction();try{for(DocumentSnapshot d:rs.getDocuments()){long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");Cursor c=rdb.rawQuery("SELECT id FROM reminders WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("item",d.getString("item"));v.put("trigger_at",d.getLong("trigger_at")==null?0:d.getLong("trigger_at"));v.put("done",d.getLong("done")==null?0:d.getLong("done"));v.put("estimated_amount",d.getDouble("estimated_amount")==null?0:d.getDouble("estimated_amount"));if(d.get("expense_id")==null)v.putNull("expense_id");else v.put("expense_id",((Number)d.get("expense_id")).longValue());rdb.insert("reminders",null,v);}}rdb.setTransactionSuccessful();}finally{rdb.endTransaction();}if(getRetentionMonths()>0)cleanupOldRecords(false);uploadAllLocal();updateAdminStats();reschedulePendingReminders();if(uiReady)showPage(page);}).addOnFailureListener(e->Toast.makeText(this,"Cloud restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show());}).addOnFailureListener(e->Toast.makeText(this,"Cloud restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show());}
-    private int getRetentionMonths(){
+    private void syncAllCloud(){
+         if(FirebaseAuth.getInstance().getCurrentUser()==null||cloudSyncInProgress)return;
+         applyCloudNetworkPreference();
+         if(!cloudNetworkAllowed())return;
+         cloudSyncInProgress=true;
+         FirebaseFirestore.getInstance().enableNetwork()
+             .addOnSuccessListener(v->processPendingCloudDeletes(new ArrayList<>(pendingCloudSet()),0))
+             .addOnFailureListener(e->{cloudSyncInProgress=false;refreshPendingCloudText();Toast.makeText(this,"Cloud sync could not start: "+e.getMessage(),Toast.LENGTH_LONG).show();});
+     }
+     private void processPendingCloudDeletes(ArrayList<String> pending,int index){
+         while(index<pending.size()&&!pending.get(index).startsWith("delete-expenses:")&&!pending.get(index).startsWith("delete-reminders:")&&!pending.get(index).startsWith("delete-categoryItems:"))index++;
+         if(index>=pending.size()){restoreCloudRecords();return;}
+         String entry=pending.get(index);int split=entry.indexOf(':');String operation=entry.substring(0,split),id=entry.substring(split+1);
+         String collection=operation.substring("delete-".length());
+         Map<String,Object> tombstone=new HashMap<>();
+         if("categoryItems".equals(collection)){String decoded=Uri.decode(id);int separator=decoded.indexOf('/');if(separator>=0){tombstone.put("category",decoded.substring(0,separator));tombstone.put("name",decoded.substring(separator+1));}tombstone.put("itemKey",id);}
+         else tombstone.put("id",Long.parseLong(id));
+         tombstone.put("deleted",true);tombstone.put("deletedAt",FieldValue.serverTimestamp());
+         final int next=index+1;
+         cloudCollection(collection).document(id).set(tombstone)
+             .addOnSuccessListener(v->{clearCloudPending(operation,id);processPendingCloudDeletes(pending,next);})
+             .addOnFailureListener(e->{cloudSyncInProgress=false;refreshPendingCloudText();Toast.makeText(this,"Pending delete is waiting for cloud: "+e.getMessage(),Toast.LENGTH_LONG).show();});
+     }
+     private void restoreCloudRecords(){
+         cloudCollection("expenses").get().addOnSuccessListener(es->{
+             SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();
+             try{
+                 for(DocumentSnapshot d:es.getDocuments()){
+                     long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");
+                     if(Boolean.TRUE.equals(d.getBoolean("deleted"))){sql.delete("expenses","id=?",new String[]{String.valueOf(id)});continue;}
+                     Cursor c=sql.rawQuery("SELECT id FROM expenses WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();
+                     if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("category",d.getString("category"));v.put("description",d.getString("description")==null?"":d.getString("description"));v.put("amount",d.getDouble("amount")==null?0:d.getDouble("amount"));v.put("date",d.getString("date"));sql.insert("expenses",null,v);}
+                 }
+                 sql.setTransactionSuccessful();
+             }finally{sql.endTransaction();}
+             cloudCollection("reminders").get().addOnSuccessListener(rs->{
+                 SQLiteDatabase rdb=db.getWritableDatabase();rdb.beginTransaction();
+                 try{
+                     for(DocumentSnapshot d:rs.getDocuments()){
+                         long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");
+                         if(Boolean.TRUE.equals(d.getBoolean("deleted"))){ReminderReceiver.cancel(this,id);rdb.delete("reminders","id=?",new String[]{String.valueOf(id)});continue;}
+                         Cursor c=rdb.rawQuery("SELECT id FROM reminders WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();
+                         if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("item",d.getString("item"));v.put("trigger_at",d.getLong("trigger_at")==null?0:d.getLong("trigger_at"));v.put("done",d.getLong("done")==null?0:d.getLong("done"));v.put("estimated_amount",d.getDouble("estimated_amount")==null?0:d.getDouble("estimated_amount"));if(d.get("expense_id")==null)v.putNull("expense_id");else v.put("expense_id",((Number)d.get("expense_id")).longValue());rdb.insert("reminders",null,v);}
+                     }
+                     rdb.setTransactionSuccessful();
+                 }finally{rdb.endTransaction();}
+                 if(getRetentionMonths()>0)cleanupOldRecords(false);
+                 restoreCloudCategoryItems();
+             }).addOnFailureListener(e->{cloudSyncInProgress=false;Toast.makeText(this,"Cloud reminder restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show();});
+         }).addOnFailureListener(e->{cloudSyncInProgress=false;Toast.makeText(this,"Cloud expense restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show();});
+     }
+     private void restoreCloudCategoryItems(){
+         cloudCollection("categoryItems").get().addOnSuccessListener(items->{
+             SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();
+             try{
+                 for(DocumentSnapshot d:items.getDocuments()){
+                     String cat=d.getString("category"),name=d.getString("name");
+                     if(cat==null||name==null)continue;
+                     if(Boolean.TRUE.equals(d.getBoolean("deleted"))){sql.delete("category_items","category=? AND name=?",new String[]{cat,name});continue;}
+                     String icon=d.getString("icon");if(icon==null||icon.isEmpty())icon="📦";
+                     ContentValues values=new ContentValues();values.put("icon",icon);
+                     int changed=sql.update("category_items",values,"category=? AND name=?",new String[]{cat,name});
+                     if(changed==0){values.put("category",cat);values.put("name",name);sql.insertWithOnConflict("category_items",null,values,SQLiteDatabase.CONFLICT_IGNORE);}
+                 }
+                 sql.setTransactionSuccessful();
+             }finally{sql.endTransaction();}
+             uploadAllLocal();updateAdminStats();reschedulePendingReminders();cloudSyncInProgress=false;
+             if(uiReady)showPage(page);
+         }).addOnFailureListener(e->{cloudSyncInProgress=false;Toast.makeText(this,"Cloud item restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show();});
+     }
+     private int getRetentionMonths(){
         android.content.SharedPreferences p=getPreferences(0);
         return p.getInt("auto_delete_months",p.getBoolean("auto_delete_3_months",false)?3:0);
     }
@@ -499,7 +571,11 @@ public class MainActivity extends FragmentActivity {
             reminderData.add(m);
         }
         r.close();
-        final int total=expenseData.size()+reminderData.size();
+        Cursor ci=db.getReadableDatabase().rawQuery("SELECT name,category,icon FROM category_items",null);
+        ArrayList<Map<String,Object>> itemData=new ArrayList<>();
+        while(ci.moveToNext()){Map<String,Object> m=new HashMap<>();m.put("name",ci.getString(0));m.put("category",ci.getString(1));m.put("icon",ci.getString(2));itemData.add(m);}
+        ci.close();
+        final int total=expenseData.size()+reminderData.size()+itemData.size();
         if(total==0){Toast.makeText(this,"Cloud backup complete — no records to upload",Toast.LENGTH_LONG).show();return;}
         Toast.makeText(this,"Uploading "+total+" records to cloud…",Toast.LENGTH_SHORT).show();
         final int[] completed={0};
@@ -514,20 +590,46 @@ public class MainActivity extends FragmentActivity {
         };
         for(Map<String,Object> m:expenseData){
             String id=String.valueOf(m.get("id"));
+            markCloudPending("expenses",id);
             cloudCollection("expenses").document(id).set(m)
-                .addOnSuccessListener(v->finishOne.run())
+                .addOnSuccessListener(v->{clearCloudPending("expenses",id);finishOne.run();})
                 .addOnFailureListener(err->{failed[0]=true;if(firstError[0]==null)firstError[0]=err.getMessage();finishOne.run();});
         }
         for(Map<String,Object> m:reminderData){
             String id=String.valueOf(m.get("id"));
+            markCloudPending("reminders",id);
             cloudCollection("reminders").document(id).set(m)
-                .addOnSuccessListener(v->finishOne.run())
+                .addOnSuccessListener(v->{clearCloudPending("reminders",id);finishOne.run();})
                 .addOnFailureListener(err->{failed[0]=true;if(firstError[0]==null)firstError[0]=err.getMessage();finishOne.run();});
+        }
+        for(Map<String,Object> m:itemData){
+            String key=categoryItemKey((String)m.get("category"),(String)m.get("name"));
+            markCloudPending("categoryItems",key);
+            cloudCollection("categoryItems").document(key).set(m)
+                .addOnSuccessListener(v->{clearCloudPending("categoryItems",key);finishOne.run();})
+                .addOnFailureListener(err->{failed[0]=true;if(firstError[0]==null)firstError[0]=err.getMessage();finishOne.run();});
+        }
+    }
+    private String categoryItemKey(String category,String name){return Uri.encode(category+"/"+name);}
+    private void pushCategoryItem(long id){
+        if(FirebaseAuth.getInstance().getCurrentUser()==null)return;
+        Cursor c=db.getReadableDatabase().rawQuery("SELECT name,category,icon FROM category_items WHERE id=?",new String[]{String.valueOf(id)});
+        if(!c.moveToFirst()){c.close();return;}
+        String name=c.getString(0),cat=c.getString(1),icon=c.getString(2);c.close();
+        String key=categoryItemKey(cat,name);Map<String,Object> data=new HashMap<>();data.put("name",name);data.put("category",cat);data.put("icon",icon==null?"📦":icon);
+        markCloudPending("categoryItems",key);
+        cloudCollection("categoryItems").document(key).set(data).addOnSuccessListener(v->{clearCloudPending("categoryItems",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());
+    }
+    private void deleteCloudCategoryItem(String category,String name){
+        String key=categoryItemKey(category,name),operation="delete-categoryItems";markCloudPending(operation,key);
+        if(FirebaseAuth.getInstance().getCurrentUser()!=null){
+            Map<String,Object> tombstone=new HashMap<>();tombstone.put("category",category);tombstone.put("name",name);tombstone.put("itemKey",key);tombstone.put("deleted",true);tombstone.put("deletedAt",FieldValue.serverTimestamp());
+            cloudCollection("categoryItems").document(key).set(tombstone).addOnSuccessListener(v->clearCloudPending(operation,key)).addOnFailureListener(e->refreshPendingCloudText());
         }
     }
     private void pushExpense(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date FROM expenses WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("category",c.getString(0));m.put("description",c.getString(1));m.put("amount",c.getDouble(2));m.put("date",c.getString(3));c.close();String key=String.valueOf(id);markCloudPending("expenses",key);cloudCollection("expenses").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("expenses",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
     private void pushReminder(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT item,trigger_at,done,estimated_amount,expense_id FROM reminders WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("item",c.getString(0));m.put("trigger_at",c.getLong(1));m.put("done",c.getLong(2));m.put("estimated_amount",c.getDouble(3));m.put("expense_id",c.isNull(4)?null:c.getLong(4));c.close();String key=String.valueOf(id);markCloudPending("reminders",key);cloudCollection("reminders").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("reminders",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
-    private void deleteCloudRecord(String collection,long id){if(FirebaseAuth.getInstance().getCurrentUser()!=null){String key=String.valueOf(id);markCloudPending("delete-"+collection,key);cloudCollection(collection).document(key).delete().addOnSuccessListener(v->clearCloudPending("delete-"+collection,key)).addOnFailureListener(e->refreshPendingCloudText());}}
+    private void deleteCloudRecord(String collection,long id){String key=String.valueOf(id);String operation="delete-"+collection;markCloudPending(operation,key);if(FirebaseAuth.getInstance().getCurrentUser()!=null){Map<String,Object> tombstone=new HashMap<>();tombstone.put("id",id);tombstone.put("deleted",true);tombstone.put("deletedAt",FieldValue.serverTimestamp());cloudCollection(collection).document(key).set(tombstone).addOnSuccessListener(v->clearCloudPending(operation,key)).addOnFailureListener(e->refreshPendingCloudText());}}
     private long estimateLocalDataBytes(){
         long n=0;Cursor e=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date FROM expenses",null);
         while(e.moveToNext()){for(int i=0;i<4;i++)if(!e.isNull(i))n+=String.valueOf(e.getString(i)).getBytes(java.nio.charset.StandardCharsets.UTF_8).length+8;}e.close();
