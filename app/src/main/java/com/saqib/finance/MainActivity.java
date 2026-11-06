@@ -258,7 +258,6 @@ public class MainActivity extends FragmentActivity {
         TextView preview=txt("📦",34,ink,true);preview.setGravity(Gravity.CENTER);iconRow.addView(preview,lp(58,54));
         LinearLayout iconActions=col();
         Button choose=smallFilter("Choose icon");iconActions.addView(choose,lp(-1,40));
-        Button online=smallFilter("Browse online icons");LinearLayout.LayoutParams ol=lp(-1,38);ol.topMargin=dp(5);iconActions.addView(online,ol);
         iconRow.addView(iconActions,new LinearLayout.LayoutParams(0,-2,1));box.addView(iconRow);
         final String[] chosen={suggestItemIcon("")};final boolean[] manuallyChosen={false};
         name.addTextChangedListener(new android.text.TextWatcher(){
@@ -267,7 +266,6 @@ public class MainActivity extends FragmentActivity {
             public void afterTextChanged(android.text.Editable e){}
         });
         choose.setOnClickListener(v->showItemIconPicker(chosen,preview,manuallyChosen));
-        online.setOnClickListener(v->showOnlineIconPicker(name.getText().toString().trim(),chosen,preview,manuallyChosen));
         new AlertDialog.Builder(this).setTitle("New item · "+cat).setView(box).setNegativeButton("Cancel",null).setPositiveButton("Add",(d,w)->{
             String n=name.getText().toString().trim();
             if(n.isEmpty()){Toast.makeText(this,"Enter an item name",Toast.LENGTH_SHORT).show();return;}
@@ -406,11 +404,9 @@ public class MainActivity extends FragmentActivity {
         String[] chosen={"📦"};TextView preview=txt("📦",34,ink,true);preview.setGravity(Gravity.CENTER);
         LinearLayout box=col();box.addView(preview,lp(-1,58));
         Button choose=smallFilter("Choose icon");box.addView(choose,lp(-1,42));
-        Button online=smallFilter("Browse online icons");LinearLayout.LayoutParams op=lp(-1,40);op.topMargin=dp(6);box.addView(online,op);
         boolean[] manual={false};
         Cursor c=db.getReadableDatabase().rawQuery("SELECT icon FROM category_items WHERE id=?",new String[]{String.valueOf(id)});if(c.moveToFirst()){chosen[0]=c.getString(0);preview.setText(chosen[0]!=null&&chosen[0].startsWith("@iconify:")?"🌐":chosen[0]);}c.close();
         choose.setOnClickListener(v->showItemIconPicker(chosen,preview,manual));
-        online.setOnClickListener(v->showOnlineIconPicker(name,chosen,preview,manual));
         new AlertDialog.Builder(this).setTitle("Change icon · "+name).setView(box).setNegativeButton("Cancel",null).setPositiveButton("Save",(d,w)->{
             ContentValues cv=new ContentValues();cv.put("icon",chosen[0]);db.getWritableDatabase().update("category_items",cv,"id=?",new String[]{String.valueOf(id)});pushCategoryItem(id);selectedAddCategory=cat;showPage(5);Toast.makeText(this,"Icon updated",Toast.LENGTH_SHORT).show();
         }).show();
