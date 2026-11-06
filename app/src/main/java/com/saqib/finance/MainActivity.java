@@ -82,7 +82,9 @@ public class MainActivity extends FragmentActivity {
     private void palette(){bg=dark?0xFF101827:0xFFF4F7FC;surface=dark?0xFF1B2638:0xFFFFFFFF;ink=dark?0xFFF1F5FC:0xFF1C2B45;muted=dark?0xFFAFBDD1:0xFF718096;line=dark?0xFF34445D:0xFFE4EAF3;getWindow().setStatusBarColor(DEEP);getWindow().setNavigationBarColor(DEEP);}
     private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
     private GradientDrawable shape(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
-    private TextView txt(String s,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);if(bold)t.setTypeface(null,1);return t;}
+    private String capitalWords(String value){if(value==null||value.isEmpty())return value;java.util.regex.Matcher m=java.util.regex.Pattern.compile("(?<!\\p{L})(\\p{L})").matcher(value);StringBuffer out=new StringBuffer();while(m.find())m.appendReplacement(out,java.util.regex.Matcher.quoteReplacement(m.group(1).toUpperCase(Locale.ROOT)));m.appendTail(out);return out.toString();}
+    private EditText words(EditText e){int type=e.getInputType();if((type&android.text.InputType.TYPE_MASK_CLASS)==android.text.InputType.TYPE_CLASS_TEXT)e.setInputType((type&~android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES)|android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS);return e;}
+    private TextView txt(String s,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(capitalWords(s));t.setTextSize(size);t.setTextColor(color);if(bold)t.setTypeface(null,1);return t;}
     private LinearLayout col(){LinearLayout l=new LinearLayout(this);l.setOrientation(1);return l;}
     private LinearLayout row(){LinearLayout l=new LinearLayout(this);l.setOrientation(0);l.setGravity(Gravity.CENTER_VERTICAL);return l;}
     private LinearLayout.LayoutParams lp(int w,int h){return new LinearLayout.LayoutParams(w<0?w:dp(w),h<0?h:dp(h));}
@@ -159,7 +161,7 @@ public class MainActivity extends FragmentActivity {
         Cursor ec=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date,item FROM expenses ORDER BY date DESC,id DESC LIMIT 30",null);if(!ec.moveToFirst())expenseCard.addView(txt("No expenses recorded yet.",13,muted,false));else do{String cat=ec.getString(0),desc=ec.getString(1),date=ec.getString(3),item=ec.getString(4);LinearLayout r=row();r.setPadding(0,dp(9),0,dp(9));LinearLayout details=col();details.addView(txt(cat+(item==null||item.isEmpty()?"":" · "+item),13,ink,true));details.addView(txt(dateLabel(date)+(desc==null||desc.isEmpty()||desc.equals(item)?"":" · "+desc),11,muted,false));r.addView(details,new LinearLayout.LayoutParams(0,-2,1));r.addView(txt("-"+money(ec.getDouble(2)),13,0xFFB36A45,true));expenseCard.addView(r);View sep=new View(this);sep.setBackgroundColor(line);expenseCard.addView(sep,lp(-1,1));}while(ec.moveToNext());ec.close();
     }
     private void showAddIncomeDialog(){
-        LinearLayout box=col();box.setPadding(dp(4),dp(4),dp(4),0);EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Amount received (Rs.)");box.addView(amount,lp(-1,50));
+        LinearLayout box=col();box.setPadding(dp(4),dp(4),dp(4),0);EditText amount=words(new EditText(this));amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Amount received (Rs.)");box.addView(amount,lp(-1,50));
         EditText source=new EditText(this);source.setSingleLine(true);source.setHint("Received from (e.g. Salary, client, family)");box.addView(source,lp(-1,50));
         TextView date=txt(display.format(new Date()),14,ink,true);date.setPadding(dp(12),dp(13),dp(12),dp(13));date.setBackground(shape(bg,10));box.addView(date,lp(-1,48));date.setOnClickListener(v->pickDate(date));
         EditText note=new EditText(this);note.setSingleLine(true);note.setHint("Note (optional)");box.addView(note,lp(-1,50));
