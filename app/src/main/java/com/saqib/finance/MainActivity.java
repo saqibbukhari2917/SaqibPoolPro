@@ -49,10 +49,10 @@ public class MainActivity extends FragmentActivity {
     @SuppressWarnings("deprecation")
     public void onBackPressed(){
         if(!unlocked){super.onBackPressed();return;}
-        if(page!=0){
-            showPage(0);
-            return;
-        }
+        if(page==9){showPage(8);return;}
+        if(page==8){showPage(7);return;}
+        if(page==7){reminderFlow=false;showPage(4);return;}
+        if(page!=0){showPage(0);return;}
         super.onBackPressed();
     }
 
@@ -898,15 +898,16 @@ public class MainActivity extends FragmentActivity {
         save.setOnClickListener(v->{if(pendingItemName.trim().isEmpty()){Toast.makeText(this,"Choose an item first",Toast.LENGTH_SHORT).show();showPage(8);return;}if(selected.getTimeInMillis()<=System.currentTimeMillis()){Toast.makeText(this,"Please choose a future date and time",Toast.LENGTH_LONG).show();return;}if(android.os.Build.VERSION.SDK_INT>=31&&!getSystemService(android.app.AlarmManager.class).canScheduleExactAlarms()){try{startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,android.net.Uri.parse("package:"+getPackageName())));Toast.makeText(this,"Allow alarms, then tap Save reminder again",Toast.LENGTH_LONG).show();}catch(Exception e){}return;}if(android.os.Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},901);Toast.makeText(this,"Allow notifications, then tap Save reminder again",Toast.LENGTH_LONG).show();return;}double expected=0;String raw=estimate.getText().toString().trim();if(!raw.isEmpty()){try{expected=Double.parseDouble(raw);if(expected<=0||Double.isInfinite(expected)||Double.isNaN(expected))throw new Exception();}catch(Exception ex){estimate.setError("Enter a valid expected price");return;}}ContentValues cv=new ContentValues();cv.put("item",pendingItemName);cv.put("category",pendingReminderCategory);cv.put("estimated_amount",expected);cv.put("trigger_at",selected.getTimeInMillis());cv.put("done",0);long id=db.getWritableDatabase().insert("reminders",null,cv);if(id>0){pushReminder(id);ReminderReceiver.schedule(this,id,pendingItemName,selected.getTimeInMillis());reminderFlow=false;pendingItemName="";Toast.makeText(this,"Buy reminder saved",Toast.LENGTH_SHORT).show();showPage(4);}});
     }
     private void confirmReminderPurchase(long reminderId,String itemName,double estimated){
+        String savedCategory="Other";Cursor reminderCategoryCursor=db.getReadableDatabase().rawQuery("SELECT category FROM reminders WHERE id=?",new String[]{String.valueOf(reminderId)});if(reminderCategoryCursor.moveToFirst()&&reminderCategoryCursor.getString(0)!=null)savedCategory=reminderCategoryCursor.getString(0);reminderCategoryCursor.close();
         LinearLayout box=col();box.setPadding(dp(4),dp(4),dp(4),0);
-        box.addView(txt("CATEGORY  *",11,muted,true));Spinner cat=new Spinner(this);cat.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));box.addView(cat,lp(-1,48));
+        box.addView(txt("CATEGORY  *",11,muted,true));Spinner cat=new Spinner(this);cat.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));cat.setSelection(Math.max(0,Arrays.asList(CATS).indexOf(savedCategory)));box.addView(cat,lp(-1,48));
         TextView amountLabel=txt("ACTUAL AMOUNT PAID (PKR)  *",11,muted,true);amountLabel.setPadding(0,dp(12),0,dp(4));box.addView(amountLabel);
         EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);if(estimated>0)amount.setText(String.valueOf(estimated));else amount.setHint("Enter amount actually paid");box.addView(amount,lp(-1,50));
         TextView descLabel=txt("DESCRIPTION (OPTIONAL)",11,muted,true);descLabel.setPadding(0,dp(12),0,dp(4));box.addView(descLabel);
         EditText description=new EditText(this);description.setSingleLine(true);description.setText(itemName);box.addView(description,lp(-1,50));
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Confirm purchase").setMessage(estimated>0?"Use the estimated amount or change it to the actual amount paid.":"Enter the amount you actually paid to add this purchase to expenses.").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Confirm Done",null).create();
         dialog.setOnShowListener(v->{dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{String raw=amount.getText().toString().trim();double paid;try{paid=Double.parseDouble(raw);if(paid<=0||Double.isInfinite(paid)||Double.isNaN(paid))throw new Exception();}catch(Exception ex){amount.setError("Enter a valid amount");return;}
-            ContentValues expense=new ContentValues();expense.put("category",cat.getSelectedItem().toString());expense.put("description",description.getText().toString().trim());expense.putNull("item");expense.put("amount",paid);expense.put("date",iso.format(new Date()));long expenseId=db.getWritableDatabase().insert("expenses",null,expense);if(expenseId>0)pushExpense(expenseId);if(expenseId<0){Toast.makeText(this,"Could not save expense",Toast.LENGTH_LONG).show();return;}
+            ContentValues expense=new ContentValues();expense.put("category",cat.getSelectedItem().toString());expense.put("description",description.getText().toString().trim());expense.put("item",itemName);expense.put("amount",paid);expense.put("date",iso.format(new Date()));long expenseId=db.getWritableDatabase().insert("expenses",null,expense);if(expenseId>0)pushExpense(expenseId);if(expenseId<0){Toast.makeText(this,"Could not save expense",Toast.LENGTH_LONG).show();return;}
             ContentValues completed=new ContentValues();completed.put("done",1);completed.put("expense_id",expenseId);db.getWritableDatabase().update("reminders",completed,"id=?",new String[]{String.valueOf(reminderId)});pushReminder(reminderId);ReminderReceiver.cancel(this,reminderId);dialog.dismiss();Toast.makeText(this,"Purchase added to expense history",Toast.LENGTH_SHORT).show();showPage(4);
         });});dialog.show();
     }
