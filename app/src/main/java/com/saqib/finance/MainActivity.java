@@ -41,7 +41,7 @@ public class MainActivity extends FragmentActivity {
     private final SimpleDateFormat display=new SimpleDateFormat("dd MMM yyyy",Locale.ENGLISH);
     private final SimpleDateFormat monthFmt=new SimpleDateFormat("MMMM yyyy",Locale.ENGLISH);
     private int bg,surface,ink,muted,line; private boolean unlocked=false, lockPromptShowing=false, uiReady=false;
-    @Override public void onCreate(Bundle b){super.onCreate(b);dark=getPreferences(0).getBoolean("dark",false);db=new DB(this);seedDefaultItems();refreshKnownItemIcons();setupGoogleSignIn();registerCloudNetworkCallback();applyCloudNetworkPreference();if(FirebaseAuth.getInstance().getCurrentUser()!=null)syncAllCloud();else if(getPreferences(0).getBoolean("auto_delete_3_months",false))cleanupOldRecords(false);palette();if(getPreferences(0).getBoolean("screen_lock",true)){showLockScreen();showSecurityPrompt();}else{unlocked=true;openMainUI(0);}}
+    @Override public void onCreate(Bundle b){super.onCreate(b);dark=getPreferences(0).getBoolean("dark",false);db=new DB(this);seedDefaultItems();refreshKnownItemIcons();setupGoogleSignIn();registerCloudNetworkCallback();applyCloudNetworkPreference();if(FirebaseAuth.getInstance().getCurrentUser()!=null)syncAllCloud();else if(getRetentionMonths()>0)cleanupOldRecords(false);palette();if(getPreferences(0).getBoolean("screen_lock",true)){showLockScreen();showSecurityPrompt();}else{unlocked=true;openMainUI(0);}}
     @Override protected void onResume(){super.onResume();if(getPreferences(0).getBoolean("screen_lock",true)&&!unlocked&&!lockPromptShowing){showLockScreen();showSecurityPrompt();}}
     @Override protected void onStop(){super.onStop();if(!isChangingConfigurations()&&getPreferences(0).getBoolean("screen_lock",true)&&getPreferences(0).getBoolean("lock_on_recent_apps",false)){unlocked=false;showLockScreen();}}
     @Override
@@ -392,22 +392,37 @@ public class MainActivity extends FragmentActivity {
         network.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){boolean first=true;public void onNothingSelected(AdapterView<?> x){}public void onItemSelected(AdapterView<?> x,View v,int p,long id){if(first){first=false;return;}getPreferences(0).edit().putString(PREF_CLOUD_NETWORK,networkOptions[p]).apply();applyCloudNetworkPreference();}});
         LinearLayout retention=card(c);
         retention.addView(txt("DATA & RECORD HISTORY",10,GOLD,true));
-        retention.addView(txt("Keep your records under control",17,ink,true));
-        retention.addView(txt("By default, all records stay saved. Turn this on to automatically remove expense records older than 3 months. Completed reminders older than 3 months will also be removed; upcoming reminders and your saved item categories stay safe.",12,muted,false));
-        Switch autoDelete=new Switch(this);autoDelete.setText("Auto-delete records older than 3 months");autoDelete.setTextColor(ink);autoDelete.setChecked(getPreferences(0).getBoolean("auto_delete_3_months",false));autoDelete.setPadding(0,dp(12),0,dp(6));retention.addView(autoDelete);
-        autoDelete.setOnCheckedChangeListener((button,on)->{
-            if(on){
-                new AlertDialog.Builder(this).setTitle("Turn on automatic deletion?")
-                    .setMessage("Expense records and completed reminders older than 3 months will be deleted automatically. Upcoming reminders and saved item categories will remain. This cannot be undone.")
-                    .setNegativeButton("Cancel",(d,w)->autoDelete.setChecked(false))
-                    .setPositiveButton("Turn on",(d,w)->{getPreferences(0).edit().putBoolean("auto_delete_3_months",true).apply();cleanupOldRecords(true);})
-                    .setOnCancelListener(d->autoDelete.setChecked(false)).show();
-            }else getPreferences(0).edit().putBoolean("auto_delete_3_months",false).apply();
+        retention.addView(txt("Choose how long to keep your records",17,ink,true));
+        retention.addView(txt("Select when old expenses and completed reminders should be removed automatically. Choose Off to keep all records. Upcoming reminders and saved item categories are never removed by this setting.",12,muted,false));
+        retention.addView(txt("AUTO-DELETE AFTER",11,muted,true));
+        Spinner retentionSpinner=new Spinner(this);
+        String[] retentionOptions={"Off — Keep all records","1 month","3 months","6 months","12 months"};
+        int[] retentionMonths={0,1,3,6,12};
+        ArrayAdapter<String> retentionAdapter=new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,retentionOptions);
+        retentionSpinner.setAdapter(retentionAdapter);
+        int savedMonths=getRetentionMonths(),selectedIndex=0;
+        for(int i=0;i<retentionMonths.length;i++)if(retentionMonths[i]==savedMonths)selectedIndex=i;
+        retentionSpinner.setSelection(selectedIndex);
+        LinearLayout.LayoutParams retentionSpinnerLp=lp(-1,50);retentionSpinnerLp.topMargin=dp(6);retentionSpinnerLp.bottomMargin=dp(8);retention.addView(retentionSpinner,retentionSpinnerLp);
+        retentionSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
+            boolean first=true;
+            public void onNothingSelected(AdapterView<?> parent){}
+            public void onItemSelected(AdapterView<?> parent,View view,int position,long id){
+                if(first){first=false;return;}
+                int months=retentionMonths[position],oldMonths=getRetentionMonths();
+                if(months==oldMonths)return;
+                if(months==0){getPreferences(0).edit().putInt("auto_delete_months",0).apply();Toast.makeText(MainActivity.this,"Automatic deletion is off. All records will be kept.",Toast.LENGTH_LONG).show();return;}
+                new AlertDialog.Builder(MainActivity.this).setTitle("Set automatic deletion?")
+                    .setMessage("Records older than "+months+" month"+(months==1?"":"s")+" will be permanently deleted from this phone and your connected cloud backup. This cannot be undone.")
+                    .setNegativeButton("Cancel",(d,w)->retentionSpinner.setSelection(indexForRetention(oldMonths)))
+                    .setPositiveButton("Confirm",(d,w)->{getPreferences(0).edit().putInt("auto_delete_months",months).apply();cleanupOldRecords(true);})
+                    .setOnCancelListener(d->retentionSpinner.setSelection(indexForRetention(oldMonths))).show();
+            }
         });
         Button deleteOld=smallFilter("Delete records older than 3 months now");retention.addView(deleteOld,lp(-1,44));
         deleteOld.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Delete old records?")
             .setMessage("This will permanently delete expense records and completed reminders older than 3 months from this phone and your connected cloud backup.")
-            .setNegativeButton("Cancel",null).setPositiveButton("Delete old records",(d,w)->cleanupOldRecords(true)).show());
+            .setNegativeButton("Cancel",null).setPositiveButton("Delete old records",(d,w)->cleanupOldRecords(true,3)).show());
         Button deleteAll=smallFilter("Delete all expense history");retention.addView(deleteAll,lp(-1,44));
         deleteAll.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Delete all expense history?")
             .setMessage("Every expense record on this phone and in your connected cloud backup will be permanently deleted. Reminders and saved item categories will not be deleted.")
@@ -423,18 +438,26 @@ public class MainActivity extends FragmentActivity {
     @Override protected void onDestroy(){super.onDestroy();try{if(cloudNetworkCallback!=null)((ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE)).unregisterNetworkCallback(cloudNetworkCallback);}catch(Exception ignored){}}
     private String cloudUid(){return FirebaseAuth.getInstance().getCurrentUser().getUid();}
     private CollectionReference cloudCollection(String name){return FirebaseFirestore.getInstance().collection("users").document(cloudUid()).collection(name);}
-    private void syncAllCloud(){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;applyCloudNetworkPreference();cloudCollection("expenses").get().addOnSuccessListener(es->{SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();try{for(DocumentSnapshot d:es.getDocuments()){long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");Cursor c=sql.rawQuery("SELECT id FROM expenses WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("category",d.getString("category"));v.put("description",d.getString("description")==null?"":d.getString("description"));v.put("amount",d.getDouble("amount")==null?0:d.getDouble("amount"));v.put("date",d.getString("date"));sql.insert("expenses",null,v);}}sql.setTransactionSuccessful();}finally{sql.endTransaction();}cloudCollection("reminders").get().addOnSuccessListener(rs->{SQLiteDatabase rdb=db.getWritableDatabase();rdb.beginTransaction();try{for(DocumentSnapshot d:rs.getDocuments()){long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");Cursor c=rdb.rawQuery("SELECT id FROM reminders WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("item",d.getString("item"));v.put("trigger_at",d.getLong("trigger_at")==null?0:d.getLong("trigger_at"));v.put("done",d.getLong("done")==null?0:d.getLong("done"));v.put("estimated_amount",d.getDouble("estimated_amount")==null?0:d.getDouble("estimated_amount"));if(d.get("expense_id")==null)v.putNull("expense_id");else v.put("expense_id",((Number)d.get("expense_id")).longValue());rdb.insert("reminders",null,v);}}rdb.setTransactionSuccessful();}finally{rdb.endTransaction();}if(getPreferences(0).getBoolean("auto_delete_3_months",false))cleanupOldRecords(false);uploadAllLocal();updateAdminStats();reschedulePendingReminders();if(uiReady)showPage(page);}).addOnFailureListener(e->Toast.makeText(this,"Cloud restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show());}).addOnFailureListener(e->Toast.makeText(this,"Cloud restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show());}
-    private String threeMonthCutoff(){
-        Calendar cutoff=Calendar.getInstance();cutoff.add(Calendar.MONTH,-3);return iso.format(cutoff.getTime());
+    private void syncAllCloud(){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;applyCloudNetworkPreference();cloudCollection("expenses").get().addOnSuccessListener(es->{SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();try{for(DocumentSnapshot d:es.getDocuments()){long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");Cursor c=sql.rawQuery("SELECT id FROM expenses WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("category",d.getString("category"));v.put("description",d.getString("description")==null?"":d.getString("description"));v.put("amount",d.getDouble("amount")==null?0:d.getDouble("amount"));v.put("date",d.getString("date"));sql.insert("expenses",null,v);}}sql.setTransactionSuccessful();}finally{sql.endTransaction();}cloudCollection("reminders").get().addOnSuccessListener(rs->{SQLiteDatabase rdb=db.getWritableDatabase();rdb.beginTransaction();try{for(DocumentSnapshot d:rs.getDocuments()){long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");Cursor c=rdb.rawQuery("SELECT id FROM reminders WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("item",d.getString("item"));v.put("trigger_at",d.getLong("trigger_at")==null?0:d.getLong("trigger_at"));v.put("done",d.getLong("done")==null?0:d.getLong("done"));v.put("estimated_amount",d.getDouble("estimated_amount")==null?0:d.getDouble("estimated_amount"));if(d.get("expense_id")==null)v.putNull("expense_id");else v.put("expense_id",((Number)d.get("expense_id")).longValue());rdb.insert("reminders",null,v);}}rdb.setTransactionSuccessful();}finally{rdb.endTransaction();}if(getRetentionMonths()>0)cleanupOldRecords(false);uploadAllLocal();updateAdminStats();reschedulePendingReminders();if(uiReady)showPage(page);}).addOnFailureListener(e->Toast.makeText(this,"Cloud restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show());}).addOnFailureListener(e->Toast.makeText(this,"Cloud restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show());}
+    private int getRetentionMonths(){
+        android.content.SharedPreferences p=getPreferences(0);
+        return p.getInt("auto_delete_months",p.getBoolean("auto_delete_3_months",false)?3:0);
     }
-    private void cleanupOldRecords(boolean notify){
-        String cutoff=threeMonthCutoff();
+    private int indexForRetention(int months){
+        int[] values={0,1,3,6,12};for(int i=0;i<values.length;i++)if(values[i]==months)return i;return 0;
+    }
+    private String retentionCutoff(int months){
+        Calendar cutoff=Calendar.getInstance();cutoff.add(Calendar.MONTH,-months);return iso.format(cutoff.getTime());
+    }
+    private void cleanupOldRecords(boolean notify){cleanupOldRecords(notify,Math.max(1,getRetentionMonths()));}
+    private void cleanupOldRecords(boolean notify,int months){
+        String cutoff=retentionCutoff(months);
         ArrayList<Long> expenseIds=new ArrayList<>();
         Cursor e=db.getReadableDatabase().rawQuery("SELECT id FROM expenses WHERE date<?",new String[]{cutoff});
         while(e.moveToNext())expenseIds.add(e.getLong(0));e.close();
-        ArrayList<Long> reminderIds=new ArrayList<>();
         long cutoffMillis;
-        try{cutoffMillis=iso.parse(cutoff).getTime();}catch(Exception ex){cutoffMillis=System.currentTimeMillis()-90L*24*60*60*1000;}
+        try{cutoffMillis=iso.parse(cutoff).getTime();}catch(Exception ex){cutoffMillis=System.currentTimeMillis()-months*30L*24*60*60*1000;}
+        ArrayList<Long> reminderIds=new ArrayList<>();
         Cursor r=db.getReadableDatabase().rawQuery("SELECT id FROM reminders WHERE done=1 AND trigger_at<?",new String[]{String.valueOf(cutoffMillis)});
         while(r.moveToNext())reminderIds.add(r.getLong(0));r.close();
         SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();
