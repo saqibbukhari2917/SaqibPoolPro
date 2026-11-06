@@ -217,13 +217,13 @@ public class MainActivity extends FragmentActivity {
         Button choose=smallFilter("Choose icon");iconActions.addView(choose,lp(-1,40));
         Button online=smallFilter("Browse online icons");LinearLayout.LayoutParams ol=lp(-1,38);ol.topMargin=dp(5);iconActions.addView(online,ol);
         iconRow.addView(iconActions,new LinearLayout.LayoutParams(0,-2,1));box.addView(iconRow);
-        final String[] chosen={suggestItemIcon("")};
+        final String[] chosen={suggestItemIcon("")};final boolean[] manuallyChosen={false};
         name.addTextChangedListener(new android.text.TextWatcher(){
             public void beforeTextChanged(CharSequence s,int st,int count,int after){}
-            public void onTextChanged(CharSequence s,int st,int before,int count){if(chosen[0].equals("📦")){chosen[0]=suggestItemIcon(s.toString());preview.setText(chosen[0]);}}
+            public void onTextChanged(CharSequence s,int st,int before,int count){if(!manuallyChosen[0]){chosen[0]=suggestItemIcon(s.toString());preview.setText(chosen[0]);}}
             public void afterTextChanged(android.text.Editable e){}
         });
-        choose.setOnClickListener(v->showItemIconPicker(chosen,preview));
+        choose.setOnClickListener(v->showItemIconPicker(chosen,preview,manuallyChosen));
         online.setOnClickListener(v->{String term=name.getText().toString().trim();String url="https://fonts.google.com/icons"+(term.isEmpty()?"":"?icon.query="+Uri.encode(term));try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}catch(Exception e){Toast.makeText(this,"Could not open icon catalogue",Toast.LENGTH_SHORT).show();}});
         new AlertDialog.Builder(this).setTitle("New item · "+cat).setView(box).setNegativeButton("Cancel",null).setPositiveButton("Add",(d,w)->{
             String n=name.getText().toString().trim();
@@ -235,7 +235,7 @@ public class MainActivity extends FragmentActivity {
         }).show();
     }
 
-    private void showItemIconPicker(String[] chosen,TextView preview){
+    private void showItemIconPicker(String[] chosen,TextView preview,boolean[] manuallyChosen){
         final String[] choices={"📦","⛽","🔧","🛞","🏍️","🚗","🧽","🅿️","🛣️","👟","👕","👗","💍","💄","🧴","🧒","🧸","📚","🎒","🥛","🥚","🍞","🍚","🫗","🧼","🍬","💊","🩺","🧪","🍽️","🎁","🏠","💡","💧","📱","💻","🧾","🛍️","✈️","🐾","⚽","🎮","🪑","🛏️","🔑","💰","❤️","⭐"};
         GridView grid=new GridView(this);grid.setNumColumns(4);grid.setVerticalSpacing(dp(6));grid.setHorizontalSpacing(dp(6));grid.setPadding(dp(8),dp(8),dp(8),dp(8));
         ArrayAdapter<String> adapter=new ArrayAdapter<String>(this,android.R.layout.simple_list_item_1,choices){
@@ -245,7 +245,7 @@ public class MainActivity extends FragmentActivity {
         };
         grid.setAdapter(adapter);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Choose an icon").setView(grid).setNegativeButton("Cancel",null).create();
-        grid.setOnItemClickListener((p,v,pos,id)->{chosen[0]=choices[pos];preview.setText(chosen[0]);dialog.dismiss();});
+        grid.setOnItemClickListener((p,v,pos,id)->{chosen[0]=choices[pos];manuallyChosen[0]=true;preview.setText(chosen[0]);dialog.dismiss();});
         dialog.show();
         dialog.getWindow().setLayout(-1,dp(430));
     }
