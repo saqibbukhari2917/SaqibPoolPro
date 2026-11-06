@@ -443,7 +443,9 @@ public class MainActivity extends FragmentActivity {
         if(entry.description!=null&&!entry.description.trim().isEmpty())details.addView(txt(entry.description,10,muted,false));
         entry.summary.addView(details,new LinearLayout.LayoutParams(0,-2,1));
         entry.summary.addView(txt(money(Double.parseDouble(entry.amount)),13,GREEN,true));
-        TextView edit=txt("✎",19,GREEN,true);edit.setGravity(Gravity.CENTER);entry.summary.addView(edit,lp(34,38));
+        TextView edit=txt("✎",19,GREEN,true);edit.setGravity(Gravity.CENTER);entry.summary.addView(edit,lp(30,38));
+        TextView remove=txt("×",22,muted,true);remove.setGravity(Gravity.CENTER);entry.summary.addView(remove,lp(28,38));
+        remove.setOnClickListener(v->{if(entries.size()>1){entries.remove(entry);entriesContainer.removeView(entry.summary);refreshExpenseEntryTotal(entries,totalText);}else Toast.makeText(this,"At least one item is required",Toast.LENGTH_SHORT).show();});
     }
     private void showExpenseItemEditor(ArrayList<ExpenseEntryRow> entries,LinearLayout entriesContainer,TextView totalText,ExpenseEntryRow editing,String initialCategory,String initialItem){
         LinearLayout box=col();box.setPadding(dp(4),dp(4),dp(4),0);
