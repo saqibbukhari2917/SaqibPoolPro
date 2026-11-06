@@ -4,6 +4,9 @@ import android.app.*;
 import android.os.Bundle;
 import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.BitmapFactory;
+import android.view.Gravity;
 import android.database.Cursor;
 import android.database.sqlite.*;
 import android.content.*;
@@ -34,9 +37,10 @@ public class MainActivity extends FragmentActivity {
     private ConnectivityManager.NetworkCallback cloudNetworkCallback;
     private boolean cloudSyncInProgress=false;
     private static final String[] CATS={"Kids","Wife","Family","Personal","Medicine","Grocery","Transport","Bills","Shopping","Dining","Other"};
-    private static final int GREEN=0xFF245B45, DEEP=0xFF123B2D, GOLD=0xFFE3B65C, MINT=0xFFEAF1E8;
-    private boolean categoryGridView=true; private DB db; private LinearLayout root,body,nav; private int page=0; private boolean dark=false;
-    private Calendar month=Calendar.getInstance(); private String from="",to="",category="All categories",selectedAddCategory="Grocery",pendingItemName="";
+    private static final int GREEN=0xFF2463D9, DEEP=0xFF174A9C, GOLD=0xFF5B8FE8, MINT=0xFFEAF2FF;
+    private AlertDialog[] dialogHolder=new AlertDialog[1];
+    private boolean categoryGridView=true; private DB db; private LinearLayout root,body,nav,homeBrandBar; private ScrollView pageScroll; private GestureDetector swipeDetector; private int page=0; private boolean dark=false;
+    private Calendar month=Calendar.getInstance(); private String from="",to="",category="All categories",selectedAddCategory="Grocery",pendingItemName="",pendingReminderCategory="Other"; private boolean reminderFlow=false;
     private TextView totalText,countText,monthText,pendingCloudText; private LinearLayout historyList;
     private final SimpleDateFormat iso=new SimpleDateFormat("yyyy-MM-dd",Locale.US);
     private final SimpleDateFormat display=new SimpleDateFormat("dd MMM yyyy",Locale.ENGLISH);
@@ -49,18 +53,18 @@ public class MainActivity extends FragmentActivity {
     @SuppressWarnings("deprecation")
     public void onBackPressed(){
         if(!unlocked){super.onBackPressed();return;}
-        if(page!=0){
-            showPage(0);
-            return;
-        }
+        if(page==9){showPage(8);return;}
+        if(page==8){showPage(7);return;}
+        if(page==7){reminderFlow=false;showPage(4);return;}
+        if(page!=0){showPage(0);return;}
         super.onBackPressed();
     }
 
     private void openMainUI(int targetPage){uiReady=true;palette();buildShell();showPage(targetPage);}
     private void showLockScreen(){
-        LinearLayout lock=col();lock.setGravity(Gravity.CENTER);lock.setBackgroundColor(DEEP);lock.setPadding(dp(28),dp(28),dp(28),dp(28));
-        ImageView appIcon=new ImageView(this);appIcon.setImageResource(R.drawable.ic_launcher);appIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);lock.addView(appIcon,lp(92,92));
-        TextView appName=txt("Saqib Finance",24,Color.WHITE,true);appName.setGravity(Gravity.CENTER);LinearLayout.LayoutParams nameLp=lp(-1,-2);nameLp.topMargin=dp(18);lock.addView(appName,nameLp);
+        LinearLayout lock=col();lock.setGravity(Gravity.CENTER);GradientDrawable lockBg=new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0xFF367BE8,0xFF174A9C,0xFF123B7A});lock.setBackground(lockBg);lock.setPadding(dp(28),dp(28),dp(28),dp(28));
+        ImageView appIcon=new ImageView(this);appIcon.setImageResource(R.drawable.ic_launcher);appIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);lock.addView(appIcon,lp(76,76));
+        TextView appName=txt("Saqib Finance",23,Color.WHITE,true);appName.setGravity(Gravity.CENTER);LinearLayout.LayoutParams nameLp=lp(-1,-2);nameLp.topMargin=dp(16);lock.addView(appName,nameLp);TextView lockHint=txt("Secure access to your finances",13,0xFFDCE9FF,false);lockHint.setGravity(Gravity.CENTER);LinearLayout.LayoutParams hintLp=lp(-1,-2);hintLp.topMargin=dp(7);lock.addView(lockHint,hintLp);TextView lockMethod=txt("Use fingerprint or your phone PIN",12,0xFFDCE9FF,false);lockMethod.setGravity(Gravity.CENTER);LinearLayout.LayoutParams methodLp=lp(-1,-2);methodLp.topMargin=dp(34);lock.addView(lockMethod,methodLp);
         setContentView(lock);
     }
     private void showSecurityPrompt(){
@@ -79,28 +83,33 @@ public class MainActivity extends FragmentActivity {
             .build();
         prompt.authenticate(info);
     }
-    private void palette(){bg=dark?0xFF101A16:0xFFF7F3E9;surface=dark?0xFF1B2922:0xFFFFFDF8;ink=dark?0xFFF1F4F0:0xFF24382D;muted=dark?0xFFB0BDB4:0xFF7C887D;line=dark?0xFF34443A:0xFFE9E1D2;getWindow().setStatusBarColor(DEEP);getWindow().setNavigationBarColor(DEEP);}
+    private void palette(){bg=dark?0xFF101827:0xFFF4F7FC;surface=dark?0xFF1B2638:0xFFFFFFFF;ink=dark?0xFFF1F5FC:0xFF1C2B45;muted=dark?0xFFAFBDD1:0xFF718096;line=dark?0xFF34445D:0xFFE4EAF3;getWindow().setStatusBarColor(DEEP);getWindow().setNavigationBarColor(DEEP);}
     private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
     private GradientDrawable shape(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
-    private TextView txt(String s,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);if(bold)t.setTypeface(null,1);return t;}
+    private String capitalWords(String value){if(value==null||value.isEmpty())return value;java.util.regex.Matcher m=java.util.regex.Pattern.compile("(?<!\\p{L})(\\p{L})").matcher(value);StringBuffer out=new StringBuffer();while(m.find())m.appendReplacement(out,java.util.regex.Matcher.quoteReplacement(m.group(1).toUpperCase(Locale.ROOT)));m.appendTail(out);return out.toString();}
+    private EditText words(EditText e){int type=e.getInputType();if((type&android.text.InputType.TYPE_MASK_CLASS)==android.text.InputType.TYPE_CLASS_TEXT)e.setInputType((type&~android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES)|android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS);return e;}
+    private TextView txt(String s,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(capitalWords(s));t.setTextSize(size);t.setTextColor(color);if(bold)t.setTypeface(null,1);return t;}
     private LinearLayout col(){LinearLayout l=new LinearLayout(this);l.setOrientation(1);return l;}
     private LinearLayout row(){LinearLayout l=new LinearLayout(this);l.setOrientation(0);l.setGravity(Gravity.CENTER_VERTICAL);return l;}
     private LinearLayout.LayoutParams lp(int w,int h){return new LinearLayout.LayoutParams(w<0?w:dp(w),h<0?h:dp(h));}
     private String money(double v){return "Rs. "+String.format(Locale.US,"%,.0f",v);}
     private String dateLabel(String s){try{return display.format(iso.parse(s));}catch(Exception e){return s;}}
     private void buildShell(){
-        root=col();root.setBackgroundColor(bg);setContentView(root);
+        root=col();if(dark){root.setBackgroundColor(bg);}else{BitmapDrawable wallpaper=new BitmapDrawable(getResources(),BitmapFactory.decodeResource(getResources(),R.drawable.app_watermark));wallpaper.setGravity(Gravity.FILL);root.setBackground(wallpaper);}setContentView(root);
+        homeBrandBar=homeBrandHeader();root.addView(homeBrandBar,lp(-1,88));
         FrameLayout frame=new FrameLayout(this);root.addView(frame,new LinearLayout.LayoutParams(-1,0,1));
-        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);body=col();body.setPadding(0,0,0,dp(22));scroll.addView(body);frame.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
+        pageScroll=new ScrollView(this);pageScroll.setFillViewport(true);pageScroll.setVerticalScrollBarEnabled(false);swipeDetector=new GestureDetector(this,new GestureDetector.SimpleOnGestureListener(){@Override public boolean onDown(MotionEvent e){return true;}@Override public boolean onFling(MotionEvent e1,MotionEvent e2,float velocityX,float velocityY){float dx=e2.getX()-e1.getX(),dy=e2.getY()-e1.getY();if(Math.abs(dx)>dp(80)&&Math.abs(dx)>Math.abs(dy)*1.35f&&Math.abs(velocityX)>dp(350)){int tab=currentTab();int nextTab=dx<0?Math.min(4,tab+1):Math.max(0,tab-1);if(nextTab!=tab){if(nextTab!=4)reminderFlow=false;showPage(nextTab);}return true;}return false;}});pageScroll.setOnTouchListener((v,event)->{swipeDetector.onTouchEvent(event);return false;});body=col();body.setPadding(0,0,0,dp(22));pageScroll.addView(body);frame.addView(pageScroll,new FrameLayout.LayoutParams(-1,-1));
         nav=row();nav.setBackgroundColor(DEEP);nav.setPadding(dp(5),dp(8),dp(5),dp(8));root.addView(nav,lp(-1,66));
     }
+    private int currentTab(){if(page==5)return 1;if(page>=7&&page<=9)return 4;if(page==6)return 0;return Math.max(0,Math.min(4,page));}
     private void showPage(int p){
-        page=p;body.removeAllViews();nav.removeAllViews();body.setBackgroundColor(bg);
-        if(p==0)homePage();else if(p==1)addPage();else if(p==2)historyPage();else if(p==3)settingsPage();else if(p==4)remindersPage();else if(p==5)categoryItemsPage(selectedAddCategory);else if(p==6)balancePage();
+        page=p;if(homeBrandBar!=null)homeBrandBar.setVisibility(p==0?View.VISIBLE:View.GONE);if(pageScroll!=null)pageScroll.scrollTo(0,0);body.removeAllViews();nav.removeAllViews();body.setBackgroundColor(Color.TRANSPARENT);
+        if(p==0)homePage();else if(p==1)addPage();else if(p==2)historyPage();else if(p==3)settingsPage();else if(p==4)remindersPage();else if(p==5)categoryItemsPage(selectedAddCategory);else if(p==6)balancePage();else if(p==7)reminderCategoryPage();else if(p==8)reminderItemsPage();else if(p==9)reminderDetailsPage();
         String[] labels={"Home","Add","History","Settings","Reminders"};String[] icons={"⌂","+","▤","⚙","◷"};
-        for(int i=0;i<5;i++){final int index=i;LinearLayout item=col();item.setGravity(Gravity.CENTER);boolean active=(i==p)||(p==5&&i==1);TextView ic=txt(icons[i],22,active?GOLD:0xFFD0DED5,true);ic.setGravity(Gravity.CENTER);TextView label=txt(labels[i],10,active?Color.WHITE:0xFFB5C8BD,active);label.setGravity(Gravity.CENTER);item.addView(ic);item.addView(label);item.setOnClickListener(v->showPage(index));nav.addView(item,new LinearLayout.LayoutParams(0,-1,1));}
+        for(int i=0;i<5;i++){final int index=i;LinearLayout item=col();item.setGravity(Gravity.CENTER);boolean active=(i==p)||(p==5&&i==1)||(p>=7&&i==4);TextView ic=txt(icons[i],22,active?GOLD:0xFFDCE8FA,true);ic.setGravity(Gravity.CENTER);TextView label=txt(labels[i],10,active?Color.WHITE:0xFFB8CBE8,active);label.setGravity(Gravity.CENTER);item.addView(ic);item.addView(label);item.setOnClickListener(v->{if(index!=4)reminderFlow=false;showPage(index);});nav.addView(item,new LinearLayout.LayoutParams(0,-1,1));}
     }
-    private void pageHeader(String title,String sub){LinearLayout h=col();h.setPadding(dp(16),dp(14),dp(16),dp(18));GradientDrawable gd=new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xFF087A3E,0xFF00452D,0xFF003522});gd.setCornerRadii(new float[]{0,0,0,0,dp(24),dp(24),dp(24),dp(24)});h.setBackground(gd);LinearLayout brand=row();ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.ic_launcher);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);logo.setContentDescription("Saqib Finance app icon");brand.addView(logo,lp(78,78));LinearLayout names=col();names.setGravity(Gravity.CENTER_VERTICAL);names.setPadding(dp(10),0,0,0);TextView brandName=txt("Saqib Finance",27,Color.WHITE,true);brandName.setSingleLine(true);brandName.setIncludeFontPadding(false);names.addView(brandName);TextView brandTagline=txt("Track · Manage · Save",12,0xFFFFD52A,true);brandTagline.setPadding(0,dp(5),0,0);names.addView(brandTagline);brand.addView(names,new LinearLayout.LayoutParams(0,-2,1));TextView gear=txt("⚙",28,Color.WHITE,true);gear.setGravity(Gravity.CENTER);gear.setOnClickListener(v->showPage(3));brand.addView(gear,lp(42,52));if(!title.equals("Home")){TextView titleView=txt(title,19,Color.WHITE,true);titleView.setPadding(0,dp(12),0,dp(2));h.addView(titleView);h.addView(txt(sub,11,0xFFBDD2C4,false));}body.addView(h);}
+    private LinearLayout homeBrandHeader(){LinearLayout h=row();h.setGravity(Gravity.CENTER_VERTICAL);h.setPadding(dp(18),dp(5),dp(16),dp(5));GradientDrawable gd=new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xFF78A5E8,0xFF6997E2,0xFF5C89D4});h.setBackground(gd);ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.ic_launcher);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);logo.setContentDescription("Saqib Finance app icon");h.addView(logo,lp(42,42));LinearLayout names=col();names.setGravity(Gravity.CENTER_VERTICAL);names.setPadding(dp(12),0,0,0);TextView name=txt("Saqib Finance",25,Color.WHITE,true);name.setSingleLine(true);name.setIncludeFontPadding(false);names.addView(name);TextView tagline=txt("Track · Manage · Save",12,0xFFDCE9FF,true);tagline.setPadding(0,dp(4),0,0);names.addView(tagline);h.addView(names,new LinearLayout.LayoutParams(0,-2,1));TextView gear=txt("⚙",27,Color.WHITE,true);gear.setGravity(Gravity.CENTER);gear.setOnClickListener(v->showPage(3));h.addView(gear,lp(42,52));return h;}
+    private void pageHeader(String title,String sub){if(title.equals("Home"))return;LinearLayout h=col();h.setPadding(dp(16),dp(12),dp(16),dp(13));GradientDrawable gd=new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xFF78A5E8,0xFF6997E2,0xFF5C89D4});gd.setCornerRadii(new float[]{0,0,0,0,dp(24),dp(24),dp(24),dp(24)});h.setBackground(gd);LinearLayout brand=row();ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.ic_launcher);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);logo.setContentDescription("Saqib Finance app icon");brand.addView(logo,lp(72,72));LinearLayout names=col();names.setGravity(Gravity.CENTER_VERTICAL);names.setPadding(dp(10),0,0,0);TextView brandName=txt("Saqib Finance",27,Color.WHITE,true);brandName.setSingleLine(true);brandName.setIncludeFontPadding(false);names.addView(brandName);TextView brandTagline=txt("Track · Manage · Save",12,0xFFDCE9FF,true);brandTagline.setPadding(0,dp(5),0,0);names.addView(brandTagline);brand.addView(names,new LinearLayout.LayoutParams(0,-2,1));TextView gear=txt("⚙",28,Color.WHITE,true);gear.setGravity(Gravity.CENTER);gear.setOnClickListener(v->showPage(3));brand.addView(gear,lp(42,52));if(!title.equals("Home")){TextView titleView=txt(title,19,Color.WHITE,true);titleView.setPadding(0,dp(12),0,dp(2));h.addView(titleView);h.addView(txt(sub,11,0xFFDCE9FF,false));}body.addView(h);}
     private LinearLayout content(){LinearLayout c=col();c.setPadding(dp(17),dp(17),dp(17),0);body.addView(c);return c;}
     private LinearLayout card(LinearLayout parent){LinearLayout c=col();c.setPadding(dp(16),dp(15),dp(16),dp(15));c.setBackground(shape(surface,18));c.setElevation(dp(2));LinearLayout.LayoutParams q=lp(-1,-2);q.bottomMargin=dp(13);parent.addView(c,q);return c;}
     private void homePage(){
@@ -130,7 +139,7 @@ public class MainActivity extends FragmentActivity {
     private void loadMonth(Chart chart,TextView historyCount,TextView historyAmount){String key=new SimpleDateFormat("yyyy-MM",Locale.US).format(month.getTime());Map<String,Double> data=new LinkedHashMap<>();double total=0;int count=0;for(String s:CATS)data.put(s,0d);Cursor q=db.getReadableDatabase().rawQuery("SELECT category,SUM(amount),COUNT(*) FROM expenses WHERE substr(date,1,7)=? GROUP BY category",new String[]{key});while(q.moveToNext()){String cat=q.getString(0);double val=q.getDouble(1);data.put(cat,val);total+=val;count+=q.getInt(2);}q.close();totalText.setText(money(total));countText.setText(count+" expense"+(count==1?"":"s")+" recorded");historyCount.setText(count+" records");historyAmount.setText(money(total));chart.setData(data,total);}
     private void addCategoryGrid(LinearLayout parent){
         String[] icons={"🧒","💍","👨‍👩‍👧","🧴","💊","🛒","🏍️","🧾","🛍️","🍽️","📦"};
-        int[] tints={0xFFB8D9F8,0xFFF4B8D4,0xFFFFD99A,0xFFF4D7B5,0xFFB9F0D0,0xFFDCC5F4,0xFFBDEBEA,0xFFB8D9F8,0xFFF4B8D4,0xFFC8EDB6,0xFFDCC5F4};
+        int[] tints={0xB8E7F0FC,0xB8EAF1FB,0xB8E4EEFA,0xB8EDF3FC,0xB8E6EFFB,0xB8EAF2FC,0xB8E3EEFA,0xB8E9F1FC,0xB8E5EEFA,0xB8EDF3FC,0xB8E7F0FC};
         for(int i=0;i<CATS.length;i+=4){
             LinearLayout lineRow=row();LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(8);parent.addView(lineRow,rowLp);
             for(int j=i;j<Math.min(i+4,CATS.length);j++){
@@ -158,13 +167,55 @@ public class MainActivity extends FragmentActivity {
         LinearLayout expenseCard=card(c);LinearLayout expenseHead=row();expenseHead.addView(txt("MONEY OUT · EXPENSES",12,GOLD,true),new LinearLayout.LayoutParams(0,-2,1));TextView view=txt("View all →",12,GREEN,true);expenseHead.addView(view);view.setOnClickListener(v->showPage(2));expenseCard.addView(expenseHead);
         Cursor ec=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date,item FROM expenses ORDER BY date DESC,id DESC LIMIT 30",null);if(!ec.moveToFirst())expenseCard.addView(txt("No expenses recorded yet.",13,muted,false));else do{String cat=ec.getString(0),desc=ec.getString(1),date=ec.getString(3),item=ec.getString(4);LinearLayout r=row();r.setPadding(0,dp(9),0,dp(9));LinearLayout details=col();details.addView(txt(cat+(item==null||item.isEmpty()?"":" · "+item),13,ink,true));details.addView(txt(dateLabel(date)+(desc==null||desc.isEmpty()||desc.equals(item)?"":" · "+desc),11,muted,false));r.addView(details,new LinearLayout.LayoutParams(0,-2,1));r.addView(txt("-"+money(ec.getDouble(2)),13,0xFFB36A45,true));expenseCard.addView(r);View sep=new View(this);sep.setBackgroundColor(line);expenseCard.addView(sep,lp(-1,1));}while(ec.moveToNext());ec.close();
     }
+    private JSONArray getCustomIncomeTypes(){
+        try{return new JSONArray(getPreferences(0).getString("custom_income_types","[]"));}catch(Exception e){return new JSONArray();}
+    }
+    private void saveCustomIncomeType(String name,String icon){
+        JSONArray all=getCustomIncomeTypes();for(int i=0;i<all.length();i++){JSONObject item=all.optJSONObject(i);if(item!=null&&name.equalsIgnoreCase(item.optString("name")))return;}
+        JSONObject entry=new JSONObject();try{entry.put("name",name);entry.put("icon",icon);}catch(Exception ignored){}
+        all.put(entry);getPreferences(0).edit().putString("custom_income_types",all.toString()).apply();
+    }
+    private void showNewIncomeTypeDialog(AlertDialog parent){
+        LinearLayout box=col();box.setPadding(dp(16),dp(8),dp(16),dp(4));
+        EditText name=words(new EditText(this));name.setSingleLine(true);name.setHint("Type name (e.g. Business)");box.addView(name,lp(-1,52));
+        String[] chosen={"💰"};boolean[] manual={false};TextView preview=txt(chosen[0],34,ink,true);preview.setGravity(Gravity.CENTER);
+        LinearLayout iconRow=row();iconRow.setGravity(Gravity.CENTER_VERTICAL);iconRow.addView(preview,lp(66,60));
+        LinearLayout actions=col();Button choose=smallFilter("Choose icon");actions.addView(choose,lp(-1,40));
+        Button online=smallFilter("Browse online icons");LinearLayout.LayoutParams onlineLp=lp(-1,38);onlineLp.topMargin=dp(5);actions.addView(online,onlineLp);iconRow.addView(actions,new LinearLayout.LayoutParams(0,-2,1));box.addView(iconRow);
+        choose.setOnClickListener(v->showItemIconPicker(chosen,preview,manual));online.setOnClickListener(v->showOnlineIconPicker(name.getText().toString().trim(),chosen,preview,manual));
+        new AlertDialog.Builder(this).setTitle("Add Money Type").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Save",(d,w)->{
+            String n=name.getText().toString().trim();if(n.isEmpty()){Toast.makeText(this,"Enter a type name",Toast.LENGTH_SHORT).show();return;}
+            if(Arrays.asList("Salary","Gift","Borrow","Other").contains(n)){Toast.makeText(this,"This type already exists",Toast.LENGTH_SHORT).show();return;}
+            JSONArray existing=getCustomIncomeTypes();for(int i=0;i<existing.length();i++){JSONObject item=existing.optJSONObject(i);if(item!=null&&n.equalsIgnoreCase(item.optString("name"))){Toast.makeText(this,"This type already exists",Toast.LENGTH_SHORT).show();return;}}
+            saveCustomIncomeType(n,chosen[0]);parent.dismiss();Toast.makeText(this,"Money type saved",Toast.LENGTH_SHORT).show();showAddIncomeDialog();
+        }).show();
+    }
     private void showAddIncomeDialog(){
-        LinearLayout box=col();box.setPadding(dp(4),dp(4),dp(4),0);EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Amount received (PKR)");box.addView(amount,lp(-1,50));
-        EditText source=new EditText(this);source.setSingleLine(true);source.setHint("Received from (e.g. Salary, client, family)");box.addView(source,lp(-1,50));
-        TextView date=txt(display.format(new Date()),14,ink,true);date.setPadding(dp(12),dp(13),dp(12),dp(13));date.setBackground(shape(bg,10));box.addView(date,lp(-1,48));date.setOnClickListener(v->pickDate(date));
-        EditText note=new EditText(this);note.setSingleLine(true);note.setHint("Note (optional)");box.addView(note,lp(-1,50));
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Add Money In").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();
-        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{try{double value=Double.parseDouble(amount.getText().toString().trim());if(value<=0||Double.isInfinite(value)||Double.isNaN(value))throw new Exception();String from=source.getText().toString().trim();if(from.isEmpty()){source.setError("Enter who or where money came from");return;}Date dt=display.parse(date.getText().toString());ContentValues cv=new ContentValues();cv.put("amount",value);cv.put("source",from);cv.put("date",iso.format(dt));cv.put("note",note.getText().toString().trim());long id=db.getWritableDatabase().insert("incomes",null,cv);if(id<=0)throw new Exception();pushIncome(id);dialog.dismiss();Toast.makeText(this,"Money received saved",Toast.LENGTH_SHORT).show();showPage(6);}catch(Exception e){amount.setError("Enter a valid amount");}}));dialog.show();
+        ArrayList<String> types=new ArrayList<>(Arrays.asList("Salary","Gift","Borrow"));
+        ArrayList<String> typeIcons=new ArrayList<>(Arrays.asList("💼","🎁","🤝"));
+        JSONArray custom=getCustomIncomeTypes();for(int i=0;i<custom.length();i++){JSONObject item=custom.optJSONObject(i);if(item!=null){String n=item.optString("name","").trim();if(!n.isEmpty()&&!types.contains(n)){types.add(n);typeIcons.add(item.optString("icon","💰"));}}}
+        types.add("Other");typeIcons.add("+");
+        final String[] selectedType={"Salary"};
+        final ArrayList<LinearLayout> typeTiles=new ArrayList<>();
+        LinearLayout box=col();box.setPadding(dp(18),dp(8),dp(18),dp(8));
+        TextView typeHeading=txt("SELECT TYPE",12,muted,true);typeHeading.setPadding(dp(2),0,0,dp(7));box.addView(typeHeading);
+        for(int i=0;i<types.size();i+=2){
+            LinearLayout typeRow=row();LinearLayout.LayoutParams rowParams=lp(-1,-2);rowParams.bottomMargin=dp(7);box.addView(typeRow,rowParams);
+            for(int j=i;j<Math.min(i+2,types.size());j++){
+                final int index=j;final String typeName=types.get(j);final boolean addNew=typeName.equals("Other");
+                LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(8),dp(8),dp(8),dp(7));
+                tile.setBackground(shape(typeName.equals(selectedType[0])?0xFFDCEBFF:0xFFEFF5FD,14));
+                LinearLayout.LayoutParams tileParams=new LinearLayout.LayoutParams(0,dp(76),1);if(j>i)tileParams.leftMargin=dp(7);typeRow.addView(tile,tileParams);
+                TextView icon=txt(typeIcons.get(j),addNew?30:25,ink,true);icon.setGravity(Gravity.CENTER);tile.addView(icon,lp(-1,37));
+                TextView label=txt(addNew?"Add New":typeName,13,ink,true);label.setGravity(Gravity.CENTER);tile.addView(label);
+                typeTiles.add(tile);
+                tile.setOnClickListener(v->{if(addNew){showNewIncomeTypeDialog(dialogHolder[0]);return;}selectedType[0]=typeName;for(int k=0;k<typeTiles.size();k++)typeTiles.get(k).setBackground(shape(k==index?0xFFDCEBFF:0xFFEFF5FD,14));});
+            }
+        }
+        EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Amount (Rs.)");amount.setTextColor(ink);amount.setHintTextColor(muted);amount.setPadding(dp(14),dp(10),dp(14),dp(10));amount.setBackground(shape(bg,12));LinearLayout.LayoutParams amountLp=lp(-1,54);amountLp.topMargin=dp(8);box.addView(amount,amountLp);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Add Money In").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Add",null).create();
+        dialogHolder[0]=dialog;
+        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{try{double value=Double.parseDouble(amount.getText().toString().trim());if(value<=0||Double.isInfinite(value)||Double.isNaN(value))throw new Exception();ContentValues cv=new ContentValues();cv.put("amount",value);cv.put("source",selectedType[0]);cv.put("date",iso.format(new Date()));cv.put("note","");long id=db.getWritableDatabase().insert("incomes",null,cv);if(id<=0)throw new Exception();pushIncome(id);dialog.dismiss();Toast.makeText(this,"Money received saved",Toast.LENGTH_SHORT).show();showPage(6);}catch(Exception e){amount.setError("Enter a valid amount");}}));dialog.show();
     }
     private void editIncome(long id,double value,String sourceValue,String dateValue,String noteValue){
         LinearLayout box=col();EditText amount=new EditText(this);amount.setInputType(8194);amount.setText(String.valueOf(value));box.addView(amount);EditText source=new EditText(this);source.setText(sourceValue);source.setHint("Received from");box.addView(source);
@@ -207,7 +258,7 @@ public class MainActivity extends FragmentActivity {
                     LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,dp(104),1);if(j>i)tp.leftMargin=dp(8);gridRow.addView(tile,tp);
                     addItemIcon(tile,ic==null?"📦":ic,28,lp(-1,40));
                     TextView label=txt(name,13,ink,true);label.setGravity(Gravity.CENTER);label.setMaxLines(2);tile.addView(label);
-                    tile.setOnClickListener(v->{selectedAddCategory=cat;pendingItemName=name;showPage(1);});
+                    tile.setOnClickListener(v->{if(reminderFlow){pendingReminderCategory=cat;pendingItemName=name;showPage(9);}else{selectedAddCategory=cat;pendingItemName=name;showPage(1);}});
                     tile.setOnLongClickListener(v->{showItemOptionsDialog(id,name,cat);return true;});
                 }
             }
@@ -225,7 +276,7 @@ public class MainActivity extends FragmentActivity {
                 addItemIcon(r,ic==null?"📦":ic,24,lp(42,42));
                 r.addView(txt(name,14,ink,true),new LinearLayout.LayoutParams(0,-2,1));
                 r.addView(txt("›",24,GREEN,true));
-                r.setOnClickListener(v->{selectedAddCategory=cat;pendingItemName=name;showPage(1);});
+                r.setOnClickListener(v->{if(reminderFlow){pendingReminderCategory=cat;pendingItemName=name;showPage(9);}else{selectedAddCategory=cat;pendingItemName=name;showPage(1);}});
                 r.setOnLongClickListener(v->{showItemOptionsDialog(id,name,cat);return true;});
                 items.addView(r);View sep=new View(this);sep.setBackgroundColor(line);items.addView(sep,lp(-1,1));
             }
@@ -264,7 +315,7 @@ public class MainActivity extends FragmentActivity {
             long id=db.getWritableDatabase().insertWithOnConflict("category_items",null,cv,SQLiteDatabase.CONFLICT_IGNORE);
             if(id==-1)Toast.makeText(this,"Item already exists in this category",Toast.LENGTH_SHORT).show();
             else if(id>0)pushCategoryItem(id);
-            showPage(5);
+            if(reminderFlow){pendingReminderCategory=cat;pendingItemName=n;showPage(9);}else showPage(5);
         }).show();
     }
 
@@ -430,12 +481,189 @@ public class MainActivity extends FragmentActivity {
     private void seedDefaultItems(){SQLiteDatabase sql=db.getWritableDatabase();Cursor c=sql.rawQuery("SELECT COUNT(*) FROM category_items",null);c.moveToFirst();boolean empty=c.getInt(0)==0;c.close();if(!empty)return;String[][] data={{"Wife","Clothes","Shoes","Makeup","Jewellery","Personal Care"},{"Kids","Clothes","Shoes","Toys","School","Books","Milk","Baby Care"},{"Grocery","Milk","Eggs","Soap","Bread","Sugar","Rice","Oil"},{"Medicine","Tablets","Syrup","Doctor Fee","Tests"},{"Family","Family Outing","Dinner","Gifts","Other"}};sql.beginTransaction();try{for(String[] g:data)for(int i=1;i<g.length;i++){ContentValues v=new ContentValues();v.put("category",g[0]);v.put("name",g[i]);v.put("icon",suggestItemIcon(g[i]));sql.insertWithOnConflict("category_items",null,v,SQLiteDatabase.CONFLICT_IGNORE);}sql.setTransactionSuccessful();}finally{sql.endTransaction();}}
     private Button smallButton(String s){Button b=new Button(this);b.setText(s);b.setTextSize(22);b.setTextColor(ink);b.setAllCaps(false);b.setBackground(shape(surface,10));return b;}
     private Button primaryButton(String s){Button b=new Button(this);b.setText(s);b.setTextSize(13);b.setTextColor(Color.WHITE);b.setAllCaps(false);b.setBackground(shape(GREEN,12));return b;}
-    private void addPage(){pageHeader("Add expense","Record a purchase for your household");LinearLayout c=content();LinearLayout form=card(c);
-        form.addView(txt("CATEGORY  *",11,muted,true));Spinner sp=new Spinner(this);sp.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));sp.setSelection(Math.max(0,Arrays.asList(CATS).indexOf(selectedAddCategory)));form.addView(sp,lp(-1,48));
-        TextView dl=txt("DESCRIPTION (OPTIONAL)",11,muted,true);dl.setPadding(0,dp(17),0,dp(4));form.addView(dl);EditText desc=new EditText(this);desc.setSingleLine(true);desc.setHint("e.g. School shoes");if(!pendingItemName.isEmpty())desc.setText(pendingItemName);form.addView(desc,lp(-1,52));
-        TextView al=txt("AMOUNT (PKR)  *",11,muted,true);al.setPadding(0,dp(17),0,dp(4));form.addView(al);EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Enter amount");form.addView(amount,lp(-1,52));
-        TextView dateTitle=txt("DATE",11,muted,true);dateTitle.setPadding(0,dp(17),0,dp(4));form.addView(dateTitle);TextView date=txt(display.format(new Date()),14,ink,true);date.setPadding(dp(13),dp(14),dp(13),dp(14));date.setBackground(shape(bg,10));form.addView(date,lp(-1,48));date.setOnClickListener(v->pickDate(date));
-        Button save=primaryButton("Save expense");LinearLayout.LayoutParams s=lp(-1,50);s.topMargin=dp(22);form.addView(save,s);save.setOnClickListener(v->{String a=amount.getText().toString().trim();if(a.isEmpty()){amount.setError("Amount is required");return;}try{double val=Double.parseDouble(a);if(val<=0||Double.isInfinite(val)||Double.isNaN(val))throw new Exception();Date dt=display.parse(date.getText().toString());ContentValues cv=new ContentValues();selectedAddCategory=sp.getSelectedItem().toString();cv.put("category",selectedAddCategory);if(!pendingItemName.isEmpty())cv.put("item",pendingItemName);else cv.putNull("item");cv.put("description",desc.getText().toString().trim());cv.put("amount",val);cv.put("date",iso.format(dt));long savedId=db.getWritableDatabase().insert("expenses",null,cv);if(savedId>0)pushExpense(savedId);pendingItemName="";Toast.makeText(this,"Expense saved",Toast.LENGTH_SHORT).show();showPage(0);}catch(Exception e){amount.setError("Enter a valid amount");}});
+    // Compact multi-category purchase entry: one short row per item, with a single editor dialog.
+    private class ExpenseEntryRow {
+        String category,item,description,amount;
+        LinearLayout summary;
+    }
+    private void updateExpenseEntrySummary(ExpenseEntryRow entry,ArrayList<ExpenseEntryRow> entries,LinearLayout entriesContainer,TextView totalText){
+        if(entry.summary==null)return;
+        entry.summary.removeAllViews();
+        LinearLayout details=col();
+        details.addView(txt(entry.category+" · "+(entry.item==null||entry.item.isEmpty()||"No item".equals(entry.item)?"Other detail":entry.item),13,ink,true));
+        if(entry.description!=null&&!entry.description.trim().isEmpty())details.addView(txt(entry.description,10,muted,false));
+        entry.summary.addView(details,new LinearLayout.LayoutParams(0,-2,1));
+        entry.summary.addView(txt(money(Double.parseDouble(entry.amount)),13,GREEN,true));
+        TextView edit=txt("✎",19,GREEN,true);edit.setGravity(Gravity.CENTER);entry.summary.addView(edit,lp(30,38));
+        TextView remove=txt("×",22,muted,true);remove.setGravity(Gravity.CENTER);entry.summary.addView(remove,lp(28,38));
+        remove.setOnClickListener(v->{if(entries.size()>1){entries.remove(entry);entriesContainer.removeView(entry.summary);refreshExpenseEntryTotal(entries,totalText);}else Toast.makeText(this,"At least one item is required",Toast.LENGTH_SHORT).show();});
+    }
+    private void showExpenseItemEditor(ArrayList<ExpenseEntryRow> entries,LinearLayout entriesContainer,TextView totalText,ExpenseEntryRow editing,String initialCategory,String initialItem){
+        LinearLayout box=col();box.setPadding(dp(4),dp(4),dp(4),0);
+        box.addView(txt("CATEGORY",10,muted,true));
+        Spinner cat=new Spinner(this);cat.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));
+        String startCategory=editing==null?initialCategory:editing.category;
+        cat.setSelection(Math.max(0,Arrays.asList(CATS).indexOf(startCategory)));box.addView(cat,lp(-1,46));
+        TextView itemLabel=txt("SAVED ITEM  *",10,muted,true);itemLabel.setPadding(0,dp(8),0,0);box.addView(itemLabel);
+        Spinner item=new Spinner(this);String startItem=editing==null?initialItem:editing.item;loadRequiredExpenseItems(startCategory,item,startItem);box.addView(item,lp(-1,46));
+        Button newItem=smallFilter("+  New item in this category");box.addView(newItem,lp(-1,40));
+        newItem.setOnClickListener(v->{
+            EditText name=new EditText(this);name.setSingleLine(true);name.setHint("Enter new item name");
+            new AlertDialog.Builder(this).setTitle("New item").setView(name).setNegativeButton("Cancel",null).setPositiveButton("Add",(d,w)->{
+                String n=name.getText().toString().trim();if(n.isEmpty()){Toast.makeText(this,"Enter an item name",Toast.LENGTH_SHORT).show();return;}
+                String chosenCat=cat.getSelectedItem().toString();ContentValues values=new ContentValues();values.put("name",n);values.put("category",chosenCat);values.put("icon",suggestItemIcon(n));
+                long id=db.getWritableDatabase().insertWithOnConflict("category_items",null,values,SQLiteDatabase.CONFLICT_IGNORE);
+                if(id>0)pushCategoryItem(id);
+                loadRequiredExpenseItems(chosenCat,item,n);
+                if(id==-1)Toast.makeText(this,"This item already exists. It is selected.",Toast.LENGTH_SHORT).show();
+            }).show();
+        });
+        cat.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
+            String last=startCategory;
+            public void onNothingSelected(AdapterView<?> a){}
+            public void onItemSelected(AdapterView<?> a,View v,int pos,long id){String next=CATS[pos];if(!next.equals(last)){loadRequiredExpenseItems(next,item,null);last=next;}}
+        });
+        TextView descLabel=txt("DESCRIPTION (OPTIONAL)",10,muted,true);descLabel.setPadding(0,dp(8),0,0);box.addView(descLabel);
+        EditText desc=new EditText(this);desc.setSingleLine(true);desc.setHint("Other detail");if(editing!=null)desc.setText(editing.description);box.addView(desc,lp(-1,46));
+        TextView amountLabel=txt("AMOUNT (Rs.)  *",10,muted,true);amountLabel.setPadding(0,dp(8),0,0);box.addView(amountLabel);
+        EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Enter amount");if(editing!=null)amount.setText(editing.amount);box.addView(amount,lp(-1,46));
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(editing==null?"Add purchase item":"Edit purchase item").setView(box).setNegativeButton("Cancel",null).setPositiveButton(editing==null?"Add item":"Save changes",null).create();
+        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{
+            String raw=amount.getText().toString().trim();double value;
+            try{value=Double.parseDouble(raw);if(value<=0||Double.isInfinite(value)||Double.isNaN(value))throw new Exception();}catch(Exception ex){amount.setError("Enter a valid amount");return;}
+            ExpenseEntryRow entry=editing==null?new ExpenseEntryRow():editing;
+            if(item.getSelectedItemPosition()<=0||item.getSelectedItem()==null){Toast.makeText(this,"Please select an item or add a new item",Toast.LENGTH_SHORT).show();return;}
+            entry.category=cat.getSelectedItem().toString();entry.item=item.getSelectedItem().toString();
+            entry.description=desc.getText().toString().trim();entry.amount=String.valueOf(value);
+            if(editing==null){entries.add(entry);entry.summary=row();entry.summary.setPadding(dp(10),dp(5),dp(7),dp(5));entry.summary.setBackground(shape(bg,11));LinearLayout.LayoutParams rp=lp(-1,58);rp.bottomMargin=dp(7);entriesContainer.addView(entry.summary,rp);}
+            updateExpenseEntrySummary(entry,entries,entriesContainer,totalText);
+            entry.summary.setOnClickListener(x->showExpenseItemEditor(entries,entriesContainer,totalText,entry,entry.category,entry.item));
+            refreshExpenseEntryTotal(entries,totalText);dialog.dismiss();
+        }));
+        dialog.show();
+    }
+    private void refreshExpenseEntryTotal(ArrayList<ExpenseEntryRow> entries,TextView totalText){
+        double total=0;for(ExpenseEntryRow e:entries)try{total+=Double.parseDouble(e.amount);}catch(Exception ignored){}
+        totalText.setText("Total: "+money(total)+"  ·  "+entries.size()+" item"+(entries.size()==1?"":"s"));
+    }
+    private void addPage(){
+        pageHeader("Add expense","Choose categories and add their items");
+        LinearLayout c=content();c.setPadding(dp(12),dp(9),dp(12),0);LinearLayout form=card(c);form.setPadding(dp(11),dp(10),dp(11),dp(10));
+        TextView categoryTitle=txt("CATEGORIES",11,GOLD,true);categoryTitle.setPadding(dp(2),0,0,dp(2));form.addView(categoryTitle);
+        final String autoCategory=selectedAddCategory;
+        final String autoItemName=pendingItemName;
+        final boolean openSelectedItem=autoItemName!=null&&!autoItemName.trim().isEmpty()&&autoCategory!=null&&!autoCategory.trim().isEmpty();
+        pendingItemName="";
+        String[] categoryIcons={"🧒","💍","👨‍👩‍👧","🧴","💊","🛒","🏍️","🧾","🛍️","🍽️","📦"};
+        LinearLayout categoryGrid=col();LinearLayout.LayoutParams gridLp=lp(-1,-2);gridLp.topMargin=dp(5);form.addView(categoryGrid,gridLp);
+        LinearLayout itemsPanel=col();itemsPanel.setPadding(dp(7),dp(7),dp(7),dp(7));itemsPanel.setBackground(shape(bg,14));itemsPanel.setVisibility(View.GONE);
+        LinearLayout.LayoutParams ipp=lp(-1,-2);ipp.topMargin=dp(5);form.addView(itemsPanel,ipp);
+        LinearLayout entriesContainer=col();LinearLayout.LayoutParams entriesLp=lp(-1,-2);entriesLp.topMargin=dp(9);form.addView(entriesContainer,entriesLp);
+        ArrayList<ExpenseEntryRow> entries=new ArrayList<>();
+        TextView total=txt("Total: Rs. 0  ·  0 items",12,GREEN,true);total.setPadding(0,dp(8),0,dp(10));form.addView(total);
+        for(int base=0;base<CATS.length;base+=3){
+            LinearLayout gridRow=row();gridRow.setGravity(Gravity.CENTER_VERTICAL);LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(5);categoryGrid.addView(gridRow,rowLp);
+            for(int j=base;j<Math.min(base+3,CATS.length);j++){
+                final int index=j;final String cat=CATS[j];
+                LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(4),dp(4),dp(4),dp(4));tile.setBackground(shape(surface,13));
+                LinearLayout.LayoutParams tileLp=new LinearLayout.LayoutParams(0,dp(70),1);tileLp.leftMargin=dp(3);tileLp.rightMargin=dp(3);gridRow.addView(tile,tileLp);
+                TextView ico=txt(categoryIcons[index%categoryIcons.length],23,ink,true);ico.setGravity(Gravity.CENTER);tile.addView(ico,lp(-1,31));
+                TextView label=txt(cat,10,ink,true);label.setGravity(Gravity.CENTER);label.setSingleLine(true);label.setEllipsize(android.text.TextUtils.TruncateAt.END);tile.addView(label,lp(-1,18));
+                tile.setOnClickListener(v->{selectedAddCategory=cat;categoryTitle.setVisibility(View.GONE);categoryGrid.setVisibility(View.GONE);itemsPanel.setVisibility(View.VISIBLE);renderExpenseCategoryItems(cat,itemsPanel,entries,entriesContainer,total,categoryGrid,categoryTitle);});
+            }
+            while(gridRow.getChildCount()<3){View spacer=new View(this);gridRow.addView(spacer,new LinearLayout.LayoutParams(0,dp(70),1));}
+        }
+        if(openSelectedItem){
+            categoryTitle.setVisibility(View.GONE);categoryGrid.setVisibility(View.GONE);itemsPanel.setVisibility(View.VISIBLE);
+            renderExpenseCategoryItems(autoCategory,itemsPanel,entries,entriesContainer,total,categoryGrid,categoryTitle);
+        }
+        TextView dateTitle=txt("PURCHASE DATE",11,muted,true);dateTitle.setPadding(0,dp(12),0,dp(3));form.addView(dateTitle);
+        TextView date=txt(display.format(new Date()),14,ink,true);date.setPadding(dp(13),dp(14),dp(13),dp(14));date.setBackground(shape(bg,10));form.addView(date,lp(-1,48));date.setOnClickListener(v->pickDate(date));
+        Button save=primaryButton("Save expense");LinearLayout.LayoutParams saveLp=lp(-1,50);saveLp.topMargin=dp(12);form.addView(save,saveLp);
+        save.setOnClickListener(v->{
+            if(entries.isEmpty()){Toast.makeText(this,"Add at least one item first",Toast.LENGTH_SHORT).show();return;}
+            try{
+                Date parsed=display.parse(date.getText().toString());String purchaseDate=iso.format(parsed);
+                String groupId=entries.size()>1?UUID.randomUUID().toString():null;
+                SQLiteDatabase sql=db.getWritableDatabase();ArrayList<Long> savedIds=new ArrayList<>();sql.beginTransaction();
+                try{
+                    for(ExpenseEntryRow entry:entries){
+                        ContentValues cv=new ContentValues();cv.put("category",entry.category);
+                        if(entry.item==null||entry.item.trim().isEmpty())throw new Exception("Select an item for every expense");
+                        cv.put("item",entry.item);cv.put("description",entry.description==null?"":entry.description);
+                        cv.put("amount",Double.parseDouble(entry.amount));cv.put("date",purchaseDate);
+                        if(groupId!=null)cv.put("group_id",groupId);
+                        long id=sql.insert("expenses",null,cv);if(id<=0)throw new Exception("Could not save an item");savedIds.add(id);
+                    }
+                    sql.setTransactionSuccessful();
+                }finally{sql.endTransaction();}
+                for(long id:savedIds)pushExpense(id);
+                selectedAddCategory=entries.get(0).category;pendingItemName="";
+                Toast.makeText(this,entries.size()==1?"Expense saved":"Purchase saved with "+entries.size()+" items",Toast.LENGTH_SHORT).show();showPage(0);
+            }catch(Exception e){Toast.makeText(this,"Could not save. Please check the date and amounts.",Toast.LENGTH_LONG).show();}
+        });
+        if(openSelectedItem)showQuickExpenseAmountDialog(autoCategory,autoItemName,entries,entriesContainer,total);
+    }
+    private void renderExpenseCategoryItems(String categoryName,LinearLayout panel,ArrayList<ExpenseEntryRow> entries,LinearLayout entriesContainer,TextView total,LinearLayout categoryGrid,TextView categoryTitle){
+        panel.removeAllViews();panel.addView(txt(categoryName+" ITEMS",11,GREEN,true));
+        LinearLayout itemGrid=col();LinearLayout.LayoutParams igp=lp(-1,-2);igp.topMargin=dp(5);panel.addView(itemGrid,igp);
+        Cursor q=db.getReadableDatabase().rawQuery("SELECT name,icon FROM category_items WHERE category=? ORDER BY name COLLATE NOCASE",new String[]{categoryName});
+        ArrayList<String[]> savedItems=new ArrayList<>();while(q.moveToNext())savedItems.add(new String[]{q.getString(0),q.getString(1)});q.close();
+        if(savedItems.isEmpty())panel.addView(txt("No saved items yet. Add a new item below.",12,muted,false));
+        for(int base=0;base<savedItems.size();base+=3){
+            LinearLayout itemRow=row();LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(5);itemGrid.addView(itemRow,rowLp);
+            for(int j=base;j<Math.min(base+3,savedItems.size());j++){
+                String itemName=savedItems.get(j)[0],icon=savedItems.get(j)[1];
+                LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(4),dp(4),dp(4),dp(4));tile.setBackground(shape(surface,12));
+                LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,dp(70),1);tp.leftMargin=dp(3);tp.rightMargin=dp(3);itemRow.addView(tile,tp);
+                TextView symbol=txt(icon==null||icon.trim().isEmpty()?"📦":icon,23,ink,true);symbol.setGravity(Gravity.CENTER);tile.addView(symbol,lp(-1,32));
+                TextView label=txt(itemName,10,ink,true);label.setGravity(Gravity.CENTER);label.setMaxLines(2);label.setEllipsize(android.text.TextUtils.TruncateAt.END);tile.addView(label,lp(-1,30));
+                tile.setOnClickListener(v->showQuickExpenseAmountDialog(categoryName,itemName,entries,entriesContainer,total));
+            }
+            while(itemRow.getChildCount()<3){View spacer=new View(this);itemRow.addView(spacer,new LinearLayout.LayoutParams(0,dp(70),1));}
+        }
+        Button create=smallFilter("+  New item in "+categoryName);LinearLayout.LayoutParams createLp=lp(-1,42);createLp.topMargin=dp(5);panel.addView(create,createLp);
+        create.setOnClickListener(v->{
+            EditText name=new EditText(this);name.setSingleLine(true);name.setHint("Enter new item name");
+            new AlertDialog.Builder(this).setTitle("New item in "+categoryName).setView(name).setNegativeButton("Cancel",null).setPositiveButton("Add",(d,w)->{
+                String n=name.getText().toString().trim();if(n.isEmpty()){Toast.makeText(this,"Enter an item name",Toast.LENGTH_SHORT).show();return;}
+                ContentValues values=new ContentValues();values.put("name",n);values.put("category",categoryName);values.put("icon",suggestItemIcon(n));
+                long id=db.getWritableDatabase().insertWithOnConflict("category_items",null,values,SQLiteDatabase.CONFLICT_IGNORE);
+                if(id>0)pushCategoryItem(id);else Toast.makeText(this,"This item already exists.",Toast.LENGTH_SHORT).show();
+                renderExpenseCategoryItems(categoryName,panel,entries,entriesContainer,total,categoryGrid,categoryTitle);
+            }).show();
+        });
+        LinearLayout panelActions=row();LinearLayout.LayoutParams actionsLp=lp(-1,42);actionsLp.topMargin=dp(7);panel.addView(panelActions,actionsLp);
+        Button changeCategory=smallFilter("Change category");panelActions.addView(changeCategory,new LinearLayout.LayoutParams(0,-1,1));
+        Button done=primaryButton("Done");LinearLayout.LayoutParams doneLp=new LinearLayout.LayoutParams(0,-1,1);doneLp.leftMargin=dp(8);panelActions.addView(done,doneLp);
+        changeCategory.setOnClickListener(v->{panel.setVisibility(View.GONE);categoryTitle.setVisibility(View.VISIBLE);categoryGrid.setVisibility(View.VISIBLE);});
+        done.setOnClickListener(v->{panel.setVisibility(View.GONE);categoryGrid.setVisibility(View.GONE);Toast.makeText(this,"Items selected. Save expense when ready.",Toast.LENGTH_SHORT).show();});
+    }
+    private void showQuickExpenseAmountDialog(String categoryName,String itemName,ArrayList<ExpenseEntryRow> entries,LinearLayout entriesContainer,TextView total){
+        LinearLayout box=col();box.setPadding(dp(3),dp(2),dp(3),0);
+        TextView chosen=txt(categoryName+"  ·  "+itemName,14,GREEN,true);chosen.setPadding(dp(2),0,dp(2),dp(3));box.addView(chosen);
+        TextView amountLabel=txt("AMOUNT (Rs.)  *",10,muted,true);amountLabel.setPadding(0,dp(5),0,0);box.addView(amountLabel);
+        EditText amount=words(new EditText(this));amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Enter amount");amount.setPadding(dp(10),0,dp(10),0);box.addView(amount,lp(-1,44));
+        TextView descLabel=txt("DESCRIPTION (OPTIONAL)",10,muted,true);descLabel.setPadding(0,dp(4),0,0);box.addView(descLabel);
+        EditText desc=words(new EditText(this));desc.setSingleLine(true);desc.setHint("Other detail");desc.setPadding(dp(10),0,dp(10),0);box.addView(desc,lp(-1,42));
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Add purchase item").setNegativeButton("Cancel",null).setPositiveButton("Add item",null).create();
+        dialog.setView(box,dp(22),dp(5),dp(22),dp(0));
+        dialog.setOnShowListener(v->{
+            Button positive=dialog.getButton(AlertDialog.BUTTON_POSITIVE),negative=dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+            positive.setTextColor(GREEN);positive.setAllCaps(false);positive.setMinHeight(dp(44));positive.setPadding(dp(12),0,dp(12),0);
+            negative.setTextColor(muted);negative.setAllCaps(false);negative.setMinHeight(dp(44));negative.setPadding(dp(12),0,dp(12),0);
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{
+            double value;try{value=Double.parseDouble(amount.getText().toString().trim());if(value<=0||Double.isInfinite(value)||Double.isNaN(value))throw new Exception();}catch(Exception ex){amount.setError("Enter a valid amount");return;}
+            ExpenseEntryRow entry=new ExpenseEntryRow();entry.category=categoryName;entry.item=itemName;entry.amount=String.valueOf(value);entry.description=desc.getText().toString().trim();
+            entries.add(entry);entry.summary=row();entry.summary.setPadding(dp(10),dp(5),dp(7),dp(5));entry.summary.setBackground(shape(bg,11));
+            LinearLayout.LayoutParams rp=lp(-1,58);rp.bottomMargin=dp(7);entriesContainer.addView(entry.summary,rp);
+            updateExpenseEntrySummary(entry,entries,entriesContainer,total);
+            entry.summary.setOnClickListener(x->showExpenseItemEditor(entries,entriesContainer,total,entry,entry.category,entry.item));
+            refreshExpenseEntryTotal(entries,total);dialog.dismiss();
+            });
+        });
+        dialog.show();
+        if(dialog.getWindow()!=null){int width=Math.min(getResources().getDisplayMetrics().widthPixels-dp(36),dp(420));dialog.getWindow().setLayout(width,-2);}
     }
     private void pickDate(TextView target){Calendar c=Calendar.getInstance();try{c.setTime(display.parse(target.getText().toString()));}catch(Exception e){}new DatePickerDialog(this,(v,y,m,d)->{Calendar x=Calendar.getInstance();x.set(y,m,d);target.setText(display.format(x.getTime()));},c.get(Calendar.YEAR),c.get(Calendar.MONTH),c.get(Calendar.DAY_OF_MONTH)).show();}
     private void addMonthlyOverview(LinearLayout parent){LinearLayout overview=card(parent);LinearLayout head=row();head.addView(txt("▥  Monthly Overview",17,ink,true),new LinearLayout.LayoutParams(0,-2,1));Button prev=smallButton("‹"),next=smallButton("›");TextView monthName=txt(monthFmt.format(month.getTime()),12,ink,true);monthName.setGravity(Gravity.CENTER);head.addView(prev,lp(32,32));head.addView(monthName,lp(105,32));head.addView(next,lp(32,32));overview.addView(head);Chart chart=new Chart(this);overview.addView(chart,lp(-1,175));LinearLayout legend=col();overview.addView(legend);Runnable refresh=()->{String key=new SimpleDateFormat("yyyy-MM",Locale.US).format(month.getTime());Map<String,Double> data=new LinkedHashMap<>();double total=0;for(String cat:CATS)data.put(cat,0d);Cursor q=db.getReadableDatabase().rawQuery("SELECT category,SUM(amount) FROM expenses WHERE substr(date,1,7)=? GROUP BY category",new String[]{key});while(q.moveToNext()){String cat=q.getString(0);double amount=q.getDouble(1);data.put(cat,amount);total+=amount;}q.close();chart.setData(data,total);monthName.setText(monthFmt.format(month.getTime()));legend.removeAllViews();for(String cat:CATS){double amount=data.get(cat);if(amount<=0)continue;LinearLayout r=row();r.setPadding(0,dp(4),0,dp(4));r.addView(txt("•  "+cat,12,ink,true),new LinearLayout.LayoutParams(0,-2,1));r.addView(txt(money(amount),12,ink,true));legend.addView(r);}if(total<=0)legend.addView(txt("No expenses recorded for this month.",12,muted,false));};prev.setOnClickListener(v->{month.add(Calendar.MONTH,-1);refresh.run();});next.setOnClickListener(v->{month.add(Calendar.MONTH,1);refresh.run();});refresh.run();}
@@ -448,7 +676,70 @@ public class MainActivity extends FragmentActivity {
     }
     private Button smallFilter(String s){Button b=smallButton(s);b.setTextSize(12);b.setTextColor(GREEN);return b;}
     private void pickFilter(boolean start){String old=start?from:to;Calendar c=Calendar.getInstance();try{if(!old.isEmpty())c.setTime(iso.parse(old));}catch(Exception e){}new DatePickerDialog(this,(v,y,m,d)->{Calendar x=Calendar.getInstance();x.set(y,m,d);String value=iso.format(x.getTime());if(start)from=value;else to=value;if(!from.isEmpty()&&!to.isEmpty()&&from.compareTo(to)>0){if(start)to=from;else from=to;}showPage(2);},c.get(Calendar.YEAR),c.get(Calendar.MONTH),c.get(Calendar.DAY_OF_MONTH)).show();}
-    private void refreshHistory(){if(historyList==null)return;historyList.removeAllViews();StringBuilder sql=new StringBuilder("SELECT id,category,description,amount,date,item FROM expenses WHERE 1=1");ArrayList<String>a=new ArrayList<>();if(!from.isEmpty()){sql.append(" AND date>=?");a.add(from);}if(!to.isEmpty()){sql.append(" AND date<=?");a.add(to);}if(!category.equals("All categories")){sql.append(" AND category=?");a.add(category);}sql.append(" ORDER BY date DESC,id DESC");Cursor q=db.getReadableDatabase().rawQuery(sql.toString(),a.toArray(new String[0]));if(!q.moveToFirst()){historyList.addView(txt("No matching expenses found.",14,muted,false));}else do{final long id=q.getLong(0);String cat=q.getString(1),desc=q.getString(2),date=q.getString(4),item=q.getString(5);double amount=q.getDouble(3);LinearLayout r=row();r.setPadding(0,dp(10),0,dp(10));LinearLayout d=col();d.addView(txt(cat+(item==null||item.isEmpty()?"":" · "+item),14,ink,true));String detail=(!desc.isEmpty()&&!desc.equals(item)?desc+" · ":"")+dateLabel(date);d.addView(txt(detail,11,muted,false));r.addView(d,new LinearLayout.LayoutParams(0,-2,1));r.addView(txt(money(amount),14,GREEN,true));r.setOnClickListener(v->editExpense(id,cat,desc,amount,date));historyList.addView(r);View sep=new View(this);sep.setBackgroundColor(line);historyList.addView(sep,lp(-1,1));}while(q.moveToNext());q.close();}
+    private void refreshHistory(){
+        if(historyList==null)return;historyList.removeAllViews();
+        // Local-only grouping for the trial; Firestore backup format stays unchanged.
+        String groupExpr="CASE WHEN group_id IS NULL OR group_id='' THEN 'single-'||id ELSE group_id END";
+        StringBuilder where=new StringBuilder(" WHERE 1=1");ArrayList<String> filters=new ArrayList<>();
+        if(!from.isEmpty()){where.append(" AND date>=?");filters.add(from);}
+        if(!to.isEmpty()){where.append(" AND date<=?");filters.add(to);}
+        if(!category.equals("All categories")){where.append(" AND category=?");filters.add(category);}
+        String query="SELECT "+groupExpr+" AS purchase_key,MIN(date),SUM(amount),COUNT(*),COUNT(DISTINCT category),MIN(category),MAX(id) FROM expenses"+where+" GROUP BY "+groupExpr+" ORDER BY MIN(date) DESC,MAX(id) DESC";
+        Cursor q=db.getReadableDatabase().rawQuery(query,filters.toArray(new String[0]));
+        if(!q.moveToFirst()){historyList.addView(txt("No matching expenses found.",14,muted,false));q.close();return;}
+        do{
+            String key=q.getString(0),date=q.getString(1),firstCategory=q.getString(5);
+            double total=q.getDouble(2);int count=q.getInt(3),categoryCount=q.getInt(4);
+            if(count==1){
+                StringBuilder oneSql=new StringBuilder("SELECT id,category,description,amount,date,item FROM expenses WHERE "+groupExpr+"=?");ArrayList<String> oneArgs=new ArrayList<>();oneArgs.add(key);
+                if(!from.isEmpty()){oneSql.append(" AND date>=?");oneArgs.add(from);}
+                if(!to.isEmpty()){oneSql.append(" AND date<=?");oneArgs.add(to);}
+                if(!category.equals("All categories")){oneSql.append(" AND category=?");oneArgs.add(category);}
+                Cursor one=db.getReadableDatabase().rawQuery(oneSql.toString(),oneArgs.toArray(new String[0]));
+                if(one.moveToFirst()){
+                    long id=one.getLong(0);String cat=one.getString(1),desc=one.getString(2),item=one.getString(5);double amount=one.getDouble(3);
+                    LinearLayout r=row();r.setPadding(0,dp(10),0,dp(10));LinearLayout details=col();
+                    details.addView(txt(cat+(item==null||item.isEmpty()?"":" · "+item),14,ink,true));
+                    String detail=(!desc.isEmpty()&&!desc.equals(item)?desc+" · ":"")+dateLabel(date);
+                    details.addView(txt(detail,11,muted,false));r.addView(details,new LinearLayout.LayoutParams(0,-2,1));r.addView(txt(money(amount),14,GREEN,true));
+                    r.setOnClickListener(v->editExpense(id,cat,desc,amount,date));historyList.addView(r);
+                    View sep=new View(this);sep.setBackgroundColor(line);historyList.addView(sep,lp(-1,1));
+                }
+                one.close();
+            }else{
+                LinearLayout group=col();LinearLayout header=row();header.setPadding(0,dp(12),0,dp(12));
+                LinearLayout details=col();String title=categoryCount>1?"Multiple categories":firstCategory+" purchase";
+                details.addView(txt(title,14,ink,true));details.addView(txt(dateLabel(date)+" · "+count+" items · Tap to view",11,muted,false));
+                header.addView(details,new LinearLayout.LayoutParams(0,-2,1));header.addView(txt(money(total),14,GREEN,true));TextView arrow=txt("  ⌄",18,GREEN,true);header.addView(arrow);group.addView(header);
+                LinearLayout children=col();children.setVisibility(View.GONE);group.addView(children);boolean[] loaded={false};
+                header.setOnClickListener(v->{
+                    if(children.getVisibility()==View.VISIBLE){children.setVisibility(View.GONE);arrow.setText("  ⌄");}
+                    else{
+                        if(!loaded[0]){
+                            StringBuilder childSql=new StringBuilder("SELECT id,category,description,amount,date,item FROM expenses WHERE "+groupExpr+"=?");ArrayList<String> childArgs=new ArrayList<>();childArgs.add(key);
+                            if(!from.isEmpty()){childSql.append(" AND date>=?");childArgs.add(from);}
+                            if(!to.isEmpty()){childSql.append(" AND date<=?");childArgs.add(to);}
+                            if(!category.equals("All categories")){childSql.append(" AND category=?");childArgs.add(category);}
+                            childSql.append(" ORDER BY id ASC");Cursor items=db.getReadableDatabase().rawQuery(childSql.toString(),childArgs.toArray(new String[0]));
+                            while(items.moveToNext()){
+                                long id=items.getLong(0);String cat=items.getString(1),desc=items.getString(2),item=items.getString(5),itemDate=items.getString(4);double amount=items.getDouble(3);
+                                LinearLayout child=row();child.setPadding(dp(10),dp(8),0,dp(8));LinearLayout childDetails=col();
+                                childDetails.addView(txt(cat+(item==null||item.isEmpty()?"":" · "+item),13,ink,true));
+                                if(desc!=null&&!desc.isEmpty()&&!desc.equals(item))childDetails.addView(txt(desc,11,muted,false));
+                                child.addView(childDetails,new LinearLayout.LayoutParams(0,-2,1));child.addView(txt(money(amount),13,GREEN,true));
+                                child.setOnClickListener(w->editExpense(id,cat,desc,amount,itemDate));children.addView(child);
+                                View childSep=new View(this);childSep.setBackgroundColor(line);children.addView(childSep,lp(-1,1));
+                            }
+                            items.close();loaded[0]=true;
+                        }
+                        children.setVisibility(View.VISIBLE);arrow.setText("  ⌃");
+                    }
+                });
+                historyList.addView(group);View sep=new View(this);sep.setBackgroundColor(line);historyList.addView(sep,lp(-1,1));
+            }
+        }while(q.moveToNext());
+        q.close();
+    }
     private void loadExpenseItems(String cat,Spinner itemSpinner,String selectedItem){
         ArrayList<String> names=new ArrayList<>();names.add("No item");
         Cursor c=db.getReadableDatabase().rawQuery("SELECT name FROM category_items WHERE category=? ORDER BY name COLLATE NOCASE",new String[]{cat});
@@ -456,6 +747,15 @@ public class MainActivity extends FragmentActivity {
         ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,names);
         itemSpinner.setAdapter(adapter);
         int selected=names.indexOf(selectedItem==null||selectedItem.isEmpty()?"No item":selectedItem);
+        itemSpinner.setSelection(Math.max(0,selected));
+    }
+    private void loadRequiredExpenseItems(String cat,Spinner itemSpinner,String selectedItem){
+        ArrayList<String> names=new ArrayList<>();names.add("Select an item");
+        Cursor c=db.getReadableDatabase().rawQuery("SELECT name FROM category_items WHERE category=? ORDER BY name COLLATE NOCASE",new String[]{cat});
+        while(c.moveToNext())names.add(c.getString(0));c.close();
+        ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,names);
+        itemSpinner.setAdapter(adapter);
+        int selected=names.indexOf(selectedItem==null||selectedItem.isEmpty()?"":selectedItem);
         itemSpinner.setSelection(Math.max(0,selected));
     }
     private void editExpense(long id,String cat,String desc,double value,String date){
@@ -467,9 +767,12 @@ public class MainActivity extends FragmentActivity {
             if(match.moveToFirst())currentItem=match.getString(0);match.close();
         }
         final String initialItem=currentItem;
-        LinearLayout box=col();
+        LinearLayout box=col();box.setPadding(dp(20),dp(10),dp(20),dp(8));
+        box.setBackgroundColor(surface);
         Spinner sp=new Spinner(this);sp.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));sp.setSelection(Math.max(0,Arrays.asList(CATS).indexOf(cat)));
         Spinner itemSpinner=new Spinner(this);loadExpenseItems(cat,itemSpinner,initialItem);
+        sp.setPadding(dp(12),dp(5),dp(12),dp(5));itemSpinner.setPadding(dp(12),dp(5),dp(12),dp(5));
+        sp.setBackground(shape(bg,10));itemSpinner.setBackground(shape(bg,10));
         sp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
             public void onNothingSelected(AdapterView<?> a){}
             public void onItemSelected(AdapterView<?> a,View v,int pos,long itemId){
@@ -478,14 +781,15 @@ public class MainActivity extends FragmentActivity {
                 loadExpenseItems(selectedCategory,itemSpinner,preserve);
             }
         });
-        EditText de=new EditText(this);de.setHint("Description (optional)");de.setText(desc);
-        EditText am=new EditText(this);am.setInputType(8194);am.setText(String.valueOf(value));
-        TextView dt=txt(dateLabel(date),14,ink,true);dt.setPadding(dp(10),dp(12),dp(10),dp(12));dt.setOnClickListener(v->pickDate(dt));
-        box.addView(txt("Category",12,muted,true));box.addView(sp);
-        box.addView(txt("Item",12,muted,true));box.addView(itemSpinner);
-        box.addView(txt("Description (optional)",12,muted,true));box.addView(de);
-        box.addView(txt("Amount (PKR)",12,muted,true));box.addView(am);
-        box.addView(txt("Date",12,muted,true));box.addView(dt);
+        EditText de=words(new EditText(this));de.setHint("Description (optional)");de.setText(desc);
+        EditText am=new EditText(this);am.setInputType(8194);am.setText(String.valueOf(value));am.setSingleLine(true);
+        for(EditText field:new EditText[]{de,am}){field.setTextColor(ink);field.setHintTextColor(muted);field.setPadding(dp(14),dp(10),dp(14),dp(10));field.setMinHeight(dp(52));field.setBackground(shape(bg,10));}
+        TextView dt=txt(dateLabel(date),14,ink,true);dt.setPadding(dp(14),dp(13),dp(14),dp(13));dt.setBackground(shape(bg,10));dt.setOnClickListener(v->pickDate(dt));
+        TextView categoryLabel=txt("Category",12,muted,true);categoryLabel.setPadding(dp(2),dp(9),0,dp(4));box.addView(categoryLabel);box.addView(sp,lp(-1,50));
+        TextView itemLabel=txt("Item",12,muted,true);itemLabel.setPadding(dp(2),dp(10),0,dp(4));box.addView(itemLabel);box.addView(itemSpinner,lp(-1,50));
+        TextView descLabel=txt("Description (optional)",12,muted,true);descLabel.setPadding(dp(2),dp(10),0,dp(4));box.addView(descLabel);box.addView(de,lp(-1,52));
+        TextView amountLabel=txt("Amount (Rs.)",12,muted,true);amountLabel.setPadding(dp(2),dp(10),0,dp(4));box.addView(amountLabel);box.addView(am,lp(-1,52));
+        TextView dateLabelView=txt("Date",12,muted,true);dateLabelView.setPadding(dp(2),dp(10),0,dp(4));box.addView(dateLabelView);box.addView(dt,lp(-1,50));
         new AlertDialog.Builder(this).setTitle("Edit expense").setView(box)
             .setNegativeButton("Cancel",null)
             .setNeutralButton("Delete",(x,y)->new AlertDialog.Builder(this).setMessage("Delete this expense?").setNegativeButton("Cancel",null).setPositiveButton("Delete",(z,w)->{db.getWritableDatabase().delete("expenses","id=?",new String[]{String.valueOf(id)});deleteCloudRecord("expenses",id);refreshHistory();}).show())
@@ -579,7 +883,7 @@ public class MainActivity extends FragmentActivity {
             .setMessage("Every expense record on this phone and in your connected cloud backup will be permanently deleted. Reminders and saved item categories will not be deleted.")
             .setNegativeButton("Cancel",null).setPositiveButton("Delete all",(d,w)->deleteAllExpenseHistory()).show());
 
-        LinearLayout about=card(c);about.addView(txt("ABOUT",10,GOLD,true));about.addView(txt("Saqib Finance",18,ink,true));about.addView(txt("Family expense tracker · Offline storage · PKR",13,muted,false));about.addView(txt("Your records stay on this phone and sync to your Google account when connected. Sign in on a new phone to restore them.",12,muted,false));
+        LinearLayout about=card(c);about.addView(txt("ABOUT",10,GOLD,true));about.addView(txt("Saqib Finance",18,ink,true));about.addView(txt("Family expense tracker · Offline storage · Rs.",13,muted,false));about.addView(txt("Your records stay on this phone and sync to your Google account when connected. Sign in on a new phone to restore them.",12,muted,false));
     }
     private void setupGoogleSignIn(){GoogleSignInOptions o=new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestIdToken(getString(R.string.default_web_client_id)).requestEmail().build();googleSignInClient=GoogleSignIn.getClient(this,o);}
     private void startGoogleSignIn(){startActivityForResult(googleSignInClient.getSignInIntent(),REQUEST_GOOGLE_SIGN_IN);}
@@ -621,7 +925,7 @@ public class MainActivity extends FragmentActivity {
                      long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");
                      if(Boolean.TRUE.equals(d.getBoolean("deleted"))){sql.delete("expenses","id=?",new String[]{String.valueOf(id)});continue;}
                      Cursor c=sql.rawQuery("SELECT id FROM expenses WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();
-                     if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("category",d.getString("category"));v.put("description",d.getString("description")==null?"":d.getString("description"));if(d.getString("item")==null)v.putNull("item");else v.put("item",d.getString("item"));v.put("amount",d.getDouble("amount")==null?0:d.getDouble("amount"));v.put("date",d.getString("date"));sql.insert("expenses",null,v);}
+                     if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("category",d.getString("category"));v.put("description",d.getString("description")==null?"":d.getString("description"));if(d.getString("item")==null)v.putNull("item");else v.put("item",d.getString("item"));v.put("amount",d.getDouble("amount")==null?0:d.getDouble("amount"));v.put("date",d.getString("date"));String groupId=d.getString("group_id");if(groupId==null)v.putNull("group_id");else v.put("group_id",groupId);sql.insert("expenses",null,v);}
                  }
                  sql.setTransactionSuccessful();
              }finally{sql.endTransaction();}
@@ -632,7 +936,7 @@ public class MainActivity extends FragmentActivity {
                          long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");
                          if(Boolean.TRUE.equals(d.getBoolean("deleted"))){ReminderReceiver.cancel(this,id);rdb.delete("reminders","id=?",new String[]{String.valueOf(id)});continue;}
                          Cursor c=rdb.rawQuery("SELECT id FROM reminders WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();
-                         if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("item",d.getString("item"));v.put("trigger_at",d.getLong("trigger_at")==null?0:d.getLong("trigger_at"));v.put("done",d.getLong("done")==null?0:d.getLong("done"));v.put("estimated_amount",d.getDouble("estimated_amount")==null?0:d.getDouble("estimated_amount"));if(d.get("expense_id")==null)v.putNull("expense_id");else v.put("expense_id",((Number)d.get("expense_id")).longValue());rdb.insert("reminders",null,v);}
+                         if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("item",d.getString("item"));v.put("trigger_at",d.getLong("trigger_at")==null?0:d.getLong("trigger_at"));v.put("done",d.getLong("done")==null?0:d.getLong("done"));v.put("estimated_amount",d.getDouble("estimated_amount")==null?0:d.getDouble("estimated_amount"));if(d.get("expense_id")==null)v.putNull("expense_id");else v.put("expense_id",((Number)d.get("expense_id")).longValue());v.put("category",d.getString("category")==null?"Other":d.getString("category"));rdb.insert("reminders",null,v);}
                      }
                      rdb.setTransactionSuccessful();
                  }finally{rdb.endTransaction();}
@@ -719,19 +1023,19 @@ public class MainActivity extends FragmentActivity {
         Cursor inc=db.getReadableDatabase().rawQuery("SELECT id,amount,source,date,note FROM incomes",null);
         ArrayList<Map<String,Object>> incomeData=new ArrayList<>();
         while(inc.moveToNext()){Map<String,Object> m=new HashMap<>();m.put("id",inc.getLong(0));m.put("amount",inc.getDouble(1));m.put("source",inc.getString(2));m.put("date",inc.getString(3));m.put("note",inc.getString(4));incomeData.add(m);}inc.close();
-        Cursor e=db.getReadableDatabase().rawQuery("SELECT id,category,description,amount,date,item FROM expenses",null);
+        Cursor e=db.getReadableDatabase().rawQuery("SELECT id,category,description,amount,date,item,group_id FROM expenses",null);
         ArrayList<Map<String,Object>> expenseData=new ArrayList<>();
         while(e.moveToNext()){
             Map<String,Object> m=new HashMap<>();
-            m.put("id",e.getLong(0));m.put("category",e.getString(1));m.put("description",e.getString(2));m.put("amount",e.getDouble(3));m.put("date",e.getString(4));m.put("item",e.getString(5));
+            m.put("id",e.getLong(0));m.put("category",e.getString(1));m.put("description",e.getString(2));m.put("amount",e.getDouble(3));m.put("date",e.getString(4));m.put("item",e.getString(5));m.put("group_id",e.isNull(6)?null:e.getString(6));
             expenseData.add(m);
         }
         e.close();
-        Cursor r=db.getReadableDatabase().rawQuery("SELECT id,item,trigger_at,done,estimated_amount,expense_id FROM reminders",null);
+        Cursor r=db.getReadableDatabase().rawQuery("SELECT id,item,trigger_at,done,estimated_amount,expense_id,category FROM reminders",null);
         ArrayList<Map<String,Object>> reminderData=new ArrayList<>();
         while(r.moveToNext()){
             Map<String,Object> m=new HashMap<>();
-            m.put("id",r.getLong(0));m.put("item",r.getString(1));m.put("trigger_at",r.getLong(2));m.put("done",r.getLong(3));m.put("estimated_amount",r.getDouble(4));m.put("expense_id",r.isNull(5)?null:r.getLong(5));
+            m.put("id",r.getLong(0));m.put("item",r.getString(1));m.put("trigger_at",r.getLong(2));m.put("done",r.getLong(3));m.put("estimated_amount",r.getDouble(4));m.put("expense_id",r.isNull(5)?null:r.getLong(5));m.put("category",r.getString(6));
             reminderData.add(m);
         }
         r.close();
@@ -798,8 +1102,8 @@ public class MainActivity extends FragmentActivity {
         }
     }
     private void pushIncome(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT amount,source,date,note FROM incomes WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("amount",c.getDouble(0));m.put("source",c.getString(1));m.put("date",c.getString(2));m.put("note",c.getString(3));c.close();String key=String.valueOf(id);markCloudPending("incomes",key);cloudCollection("incomes").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("incomes",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
-    private void pushExpense(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date,item FROM expenses WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("category",c.getString(0));m.put("description",c.getString(1));m.put("amount",c.getDouble(2));m.put("date",c.getString(3));m.put("item",c.getString(4));c.close();String key=String.valueOf(id);markCloudPending("expenses",key);cloudCollection("expenses").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("expenses",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
-    private void pushReminder(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT item,trigger_at,done,estimated_amount,expense_id FROM reminders WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("item",c.getString(0));m.put("trigger_at",c.getLong(1));m.put("done",c.getLong(2));m.put("estimated_amount",c.getDouble(3));m.put("expense_id",c.isNull(4)?null:c.getLong(4));c.close();String key=String.valueOf(id);markCloudPending("reminders",key);cloudCollection("reminders").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("reminders",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
+    private void pushExpense(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date,item,group_id FROM expenses WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("category",c.getString(0));m.put("description",c.getString(1));m.put("amount",c.getDouble(2));m.put("date",c.getString(3));m.put("item",c.getString(4));m.put("group_id",c.isNull(5)?null:c.getString(5));c.close();String key=String.valueOf(id);markCloudPending("expenses",key);cloudCollection("expenses").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("expenses",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
+    private void pushReminder(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT item,trigger_at,done,estimated_amount,expense_id,category FROM reminders WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("item",c.getString(0));m.put("trigger_at",c.getLong(1));m.put("done",c.getLong(2));m.put("estimated_amount",c.getDouble(3));m.put("expense_id",c.isNull(4)?null:c.getLong(4));m.put("category",c.getString(5));c.close();String key=String.valueOf(id);markCloudPending("reminders",key);cloudCollection("reminders").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("reminders",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
     private void deleteCloudRecord(String collection,long id){String key=String.valueOf(id);String operation="delete-"+collection;markCloudPending(operation,key);if(FirebaseAuth.getInstance().getCurrentUser()!=null){Map<String,Object> tombstone=new HashMap<>();tombstone.put("id",id);tombstone.put("deleted",true);tombstone.put("deletedAt",FieldValue.serverTimestamp());cloudCollection(collection).document(key).set(tombstone).addOnSuccessListener(v->clearCloudPending(operation,key)).addOnFailureListener(e->refreshPendingCloudText());}}
     private long estimateLocalDataBytes(){
         long n=0;Cursor e=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date FROM expenses",null);
@@ -857,35 +1161,80 @@ public class MainActivity extends FragmentActivity {
     }
     private void remindersPage(){
         pageHeader("Buy reminders","Never forget what you need to purchase");
-        LinearLayout c=content();
-        LinearLayout form=card(c);
-        form.addView(txt("WHAT DO YOU NEED TO BUY?",11,muted,true));
-        EditText item=new EditText(this);item.setSingleLine(true);item.setHint("e.g. Medicine, groceries, school shoes");form.addView(item,lp(-1,52));
-        TextView estimateLabel=txt("ESTIMATED AMOUNT (PKR)",11,muted,true);estimateLabel.setPadding(0,dp(12),0,dp(4));form.addView(estimateLabel);
-        EditText estimate=new EditText(this);estimate.setSingleLine(true);estimate.setInputType(8194);estimate.setHint("Optional estimated amount");form.addView(estimate,lp(-1,50));
+        LinearLayout c=content();LinearLayout intro=card(c);
+        intro.addView(txt("Plan your next purchase",17,ink,true));
+        intro.addView(txt("Choose a category, select an existing item or create a new one, then set its reminder date, time and expected price.",12,muted,false));
+        Button add=primaryButton("+  Add buy reminder");intro.addView(add,lp(-1,50));
+        add.setOnClickListener(v->{reminderFlow=true;pendingItemName="";pendingReminderCategory="Other";showPage(7);});
+        LinearLayout list=card(c);list.addView(txt("UPCOMING REMINDERS",11,GOLD,true));
+        Cursor q=db.getReadableDatabase().rawQuery("SELECT id,item,trigger_at,done,estimated_amount,category FROM reminders WHERE done=0 ORDER BY trigger_at",null);
+        if(!q.moveToFirst()){list.addView(txt("No upcoming reminders.",13,muted,false));}
+        else do{long id=q.getLong(0),when=q.getLong(2);String name=q.getString(1),cat=q.getString(5);double estimateValue=q.getDouble(4);LinearLayout r=row();LinearLayout details=col();details.addView(txt((cat==null||cat.isEmpty()?"Other":cat)+" · "+name,14,ink,true));details.addView(txt(new SimpleDateFormat("dd MMM yyyy · hh:mm a",Locale.ENGLISH).format(new Date(when)),11,muted,false));if(estimateValue>0)details.addView(txt("Expected: "+money(estimateValue),11,GREEN,true));r.addView(details,new LinearLayout.LayoutParams(0,-2,1));Button done=smallFilter("Done");r.addView(done);done.setOnClickListener(v->confirmReminderPurchase(id,name,estimateValue));r.setOnLongClickListener(v->{new AlertDialog.Builder(this).setMessage("Delete this reminder?").setNegativeButton("Cancel",null).setPositiveButton("Delete",(x,y)->{ReminderReceiver.cancel(this,id);db.getWritableDatabase().delete("reminders","id=?",new String[]{String.valueOf(id)});deleteCloudRecord("reminders",id);showPage(4);}).show();return true;});list.addView(r,lp(-1,68));View sep=new View(this);sep.setBackgroundColor(line);list.addView(sep,lp(-1,1));}while(q.moveToNext());q.close();
+    }
+    private void reminderCategoryPage(){
+        pageHeader("Choose category","First select where this purchase belongs");LinearLayout c=content();LinearLayout panel=card(c);
+        String[] icons={"🧒","💍","👨‍👩‍👧","🧴","💊","🛒","🏍️","🧾","🛍️","🍽️","📦"};
+        int[] tints={0xFFB8D9F8,0xFFF4B8D4,0xFFFFD99A,0xFFF4D7B5,0xFFB9F0D0,0xFFDCC5F4,0xFFBDEBEA,0xFFB8D9F8,0xFFF4B8D4,0xFFC8EDB6,0xFFDCC5F4};
+        for(int i=0;i<CATS.length;i+=2){LinearLayout rr=row();LinearLayout.LayoutParams rp=lp(-1,-2);rp.bottomMargin=dp(8);panel.addView(rr,rp);for(int j=i;j<Math.min(i+2,CATS.length);j++){final String cat=CATS[j];LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(8),dp(10),dp(8),dp(10));tile.setBackground(shape(tints[j],16));LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,dp(88),1);if(j>i)tp.leftMargin=dp(8);rr.addView(tile,tp);TextView ico=txt(icons[j],27,ink,true);ico.setGravity(Gravity.CENTER);tile.addView(ico);TextView label=txt(cat,13,Color.BLACK,true);label.setGravity(Gravity.CENTER);tile.addView(label);tile.setOnClickListener(v->{pendingReminderCategory=cat;showPage(8);});}}
+    }
+    private void reminderItemsPage(){
+        pageHeader(pendingReminderCategory,"Choose an item to remind yourself to buy");LinearLayout c=content();LinearLayout panel=card(c);panel.addView(txt("SAVED ITEMS",11,GOLD,true));
+        Cursor q=db.getReadableDatabase().rawQuery("SELECT name,icon FROM category_items WHERE category=? ORDER BY name COLLATE NOCASE",new String[]{pendingReminderCategory});boolean any=false;
+        while(q.moveToNext()){any=true;String name=q.getString(0),ic=q.getString(1);LinearLayout r=row();r.setPadding(dp(5),dp(8),dp(5),dp(8));addItemIcon(r,ic==null?"📦":ic,25,lp(44,44));r.addView(txt(name,14,ink,true),new LinearLayout.LayoutParams(0,-2,1));r.addView(txt("›",23,GREEN,true));r.setOnClickListener(v->{pendingItemName=name;showPage(9);});panel.addView(r);View sep=new View(this);sep.setBackgroundColor(line);panel.addView(sep,lp(-1,1));}q.close();
+        if(!any)panel.addView(txt("No saved items in this category yet. You can create one below.",12,muted,false));
+        Button create=primaryButton("+  New Item");panel.addView(create,lp(-1,48));create.setOnClickListener(v->showNewItemDialog(pendingReminderCategory));
+        Button back=smallFilter("Back to categories");panel.addView(back,lp(-1,42));back.setOnClickListener(v->showPage(7));
+    }
+    private void reminderDetailsPage(){
+        pageHeader("Set reminder","Choose when you need to buy this item");LinearLayout c=content();LinearLayout form=card(c);
+        form.addView(txt("CATEGORY",11,muted,true));form.addView(txt(pendingReminderCategory,16,ink,true));
+        TextView itemLabel=txt("ITEM",11,muted,true);itemLabel.setPadding(0,dp(12),0,dp(4));form.addView(itemLabel);form.addView(txt(pendingItemName,16,GREEN,true));
+        TextView estimateLabel=txt("EXPECTED PRICE (Rs.)",11,muted,true);estimateLabel.setPadding(0,dp(14),0,dp(4));form.addView(estimateLabel);
+        EditText estimate=new EditText(this);estimate.setSingleLine(true);estimate.setInputType(8194);estimate.setHint("Optional expected price");form.addView(estimate,lp(-1,50));
         Calendar selected=Calendar.getInstance();selected.add(Calendar.HOUR_OF_DAY,1);
         TextView date=txt(display.format(selected.getTime()),14,ink,true);date.setPadding(dp(12),dp(14),dp(12),dp(14));date.setBackground(shape(bg,10));
         TextView time=txt(new SimpleDateFormat("hh:mm a",Locale.ENGLISH).format(selected.getTime()),14,ink,true);time.setPadding(dp(12),dp(14),dp(12),dp(14));time.setBackground(shape(bg,10));
         TextView dl=txt("REMINDER DATE",11,muted,true);dl.setPadding(0,dp(14),0,dp(5));form.addView(dl);form.addView(date,lp(-1,48));
-        date.setOnClickListener(v->{Calendar x=(Calendar)selected.clone();new DatePickerDialog(this,(dpick,y,m,d)->{selected.set(y,m,d);date.setText(display.format(selected.getTime()));},x.get(Calendar.YEAR),x.get(Calendar.MONTH),x.get(Calendar.DAY_OF_MONTH)).show();});
+        date.setOnClickListener(v->{Calendar x=(Calendar)selected.clone();new DatePickerDialog(this,(dpick,y,mo,d)->{selected.set(y,mo,d);date.setText(display.format(selected.getTime()));},x.get(Calendar.YEAR),x.get(Calendar.MONTH),x.get(Calendar.DAY_OF_MONTH)).show();});
         TextView tl=txt("ALARM TIME",11,muted,true);tl.setPadding(0,dp(14),0,dp(5));form.addView(tl);form.addView(time,lp(-1,48));
         time.setOnClickListener(v->{new TimePickerDialog(this,(tpick,h,min)->{selected.set(Calendar.HOUR_OF_DAY,h);selected.set(Calendar.MINUTE,min);selected.set(Calendar.SECOND,0);time.setText(new SimpleDateFormat("hh:mm a",Locale.ENGLISH).format(selected.getTime()));},selected.get(Calendar.HOUR_OF_DAY),selected.get(Calendar.MINUTE),false).show();});
-        Button save=primaryButton("Save buy reminder");LinearLayout.LayoutParams saveLp=lp(-1,48);saveLp.topMargin=dp(16);form.addView(save,saveLp);
-        save.setOnClickListener(v->{String name=item.getText().toString().trim();if(name.isEmpty()){item.setError("Enter what you need to buy");return;}if(selected.getTimeInMillis()<=System.currentTimeMillis()){Toast.makeText(this,"Please choose a future date and time",Toast.LENGTH_LONG).show();return;}if(android.os.Build.VERSION.SDK_INT>=31&&!getSystemService(android.app.AlarmManager.class).canScheduleExactAlarms()){try{startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,android.net.Uri.parse("package:"+getPackageName())));Toast.makeText(this,"Allow alarms, then tap Save reminder again",Toast.LENGTH_LONG).show();}catch(Exception e){}return;}if(android.os.Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},901);Toast.makeText(this,"Allow notifications, then tap Save reminder again",Toast.LENGTH_LONG).show();return;}double estimated=0;String estimateText=estimate.getText().toString().trim();if(!estimateText.isEmpty()){try{estimated=Double.parseDouble(estimateText);if(estimated<=0||Double.isInfinite(estimated)||Double.isNaN(estimated))throw new Exception();}catch(Exception ex){estimate.setError("Enter a valid estimate");return;}}ContentValues cv=new ContentValues();cv.put("item",name);cv.put("estimated_amount",estimated);cv.put("trigger_at",selected.getTimeInMillis());cv.put("done",0);long id=db.getWritableDatabase().insert("reminders",null,cv);if(id>0){pushReminder(id);ReminderReceiver.schedule(this,id,name,selected.getTimeInMillis());Toast.makeText(this,"Buy reminder saved",Toast.LENGTH_SHORT).show();showPage(4);}});
-        LinearLayout list=card(c);list.addView(txt("UPCOMING REMINDERS",11,GOLD,true));Cursor q=db.getReadableDatabase().rawQuery("SELECT id,item,trigger_at,done,estimated_amount FROM reminders WHERE done=0 ORDER BY trigger_at",null);if(!q.moveToFirst()){list.addView(txt("No upcoming reminders.",13,muted,false));}else do{long id=q.getLong(0),when=q.getLong(2);String name=q.getString(1);double estimateValue=q.getDouble(4);LinearLayout r=row();LinearLayout details=col();details.addView(txt(name,14,ink,true));details.addView(txt(new SimpleDateFormat("dd MMM yyyy · hh:mm a",Locale.ENGLISH).format(new Date(when)),11,muted,false));if(estimateValue>0)details.addView(txt("Estimated: "+money(estimateValue),11,GREEN,true));r.addView(details,new LinearLayout.LayoutParams(0,-2,1));Button done=smallFilter("Done");r.addView(done);done.setOnClickListener(v->confirmReminderPurchase(id,name,estimateValue));r.setOnLongClickListener(v->{new AlertDialog.Builder(this).setMessage("Delete this reminder?").setNegativeButton("Cancel",null).setPositiveButton("Delete",(a,b)->{ReminderReceiver.cancel(this,id);db.getWritableDatabase().delete("reminders","id=?",new String[]{String.valueOf(id)});deleteCloudRecord("reminders",id);showPage(4);}).show();return true;});list.addView(r,lp(-1,62));View sep=new View(this);sep.setBackgroundColor(line);list.addView(sep,lp(-1,1));}while(q.moveToNext());q.close();
+        Button save=primaryButton("Save buy reminder");LinearLayout.LayoutParams sl=lp(-1,48);sl.topMargin=dp(16);form.addView(save,sl);
+        save.setOnClickListener(v->{if(pendingItemName.trim().isEmpty()){Toast.makeText(this,"Choose an item first",Toast.LENGTH_SHORT).show();showPage(8);return;}if(selected.getTimeInMillis()<=System.currentTimeMillis()){Toast.makeText(this,"Please choose a future date and time",Toast.LENGTH_LONG).show();return;}if(android.os.Build.VERSION.SDK_INT>=31&&!getSystemService(android.app.AlarmManager.class).canScheduleExactAlarms()){try{startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,android.net.Uri.parse("package:"+getPackageName())));Toast.makeText(this,"Allow alarms, then tap Save reminder again",Toast.LENGTH_LONG).show();}catch(Exception e){}return;}if(android.os.Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},901);Toast.makeText(this,"Allow notifications, then tap Save reminder again",Toast.LENGTH_LONG).show();return;}double expected=0;String raw=estimate.getText().toString().trim();if(!raw.isEmpty()){try{expected=Double.parseDouble(raw);if(expected<=0||Double.isInfinite(expected)||Double.isNaN(expected))throw new Exception();}catch(Exception ex){estimate.setError("Enter a valid expected price");return;}}ContentValues cv=new ContentValues();cv.put("item",pendingItemName);cv.put("category",pendingReminderCategory);cv.put("estimated_amount",expected);cv.put("trigger_at",selected.getTimeInMillis());cv.put("done",0);long id=db.getWritableDatabase().insert("reminders",null,cv);if(id>0){pushReminder(id);ReminderReceiver.schedule(this,id,pendingItemName,selected.getTimeInMillis());reminderFlow=false;pendingItemName="";Toast.makeText(this,"Buy reminder saved",Toast.LENGTH_SHORT).show();showPage(4);}});
     }
     private void confirmReminderPurchase(long reminderId,String itemName,double estimated){
+        String savedCategory="Other";Cursor reminderCategoryCursor=db.getReadableDatabase().rawQuery("SELECT category FROM reminders WHERE id=?",new String[]{String.valueOf(reminderId)});if(reminderCategoryCursor.moveToFirst()&&reminderCategoryCursor.getString(0)!=null)savedCategory=reminderCategoryCursor.getString(0);reminderCategoryCursor.close();
         LinearLayout box=col();box.setPadding(dp(4),dp(4),dp(4),0);
-        box.addView(txt("CATEGORY  *",11,muted,true));Spinner cat=new Spinner(this);cat.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));box.addView(cat,lp(-1,48));
-        TextView amountLabel=txt("ACTUAL AMOUNT PAID (PKR)  *",11,muted,true);amountLabel.setPadding(0,dp(12),0,dp(4));box.addView(amountLabel);
+        box.addView(txt("CATEGORY  *",11,muted,true));Spinner cat=new Spinner(this);cat.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));cat.setSelection(Math.max(0,Arrays.asList(CATS).indexOf(savedCategory)));box.addView(cat,lp(-1,48));
+        TextView amountLabel=txt("ACTUAL AMOUNT PAID (Rs.)  *",11,muted,true);amountLabel.setPadding(0,dp(12),0,dp(4));box.addView(amountLabel);
         EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);if(estimated>0)amount.setText(String.valueOf(estimated));else amount.setHint("Enter amount actually paid");box.addView(amount,lp(-1,50));
         TextView descLabel=txt("DESCRIPTION (OPTIONAL)",11,muted,true);descLabel.setPadding(0,dp(12),0,dp(4));box.addView(descLabel);
         EditText description=new EditText(this);description.setSingleLine(true);description.setText(itemName);box.addView(description,lp(-1,50));
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Confirm purchase").setMessage(estimated>0?"Use the estimated amount or change it to the actual amount paid.":"Enter the amount you actually paid to add this purchase to expenses.").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Confirm Done",null).create();
         dialog.setOnShowListener(v->{dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{String raw=amount.getText().toString().trim();double paid;try{paid=Double.parseDouble(raw);if(paid<=0||Double.isInfinite(paid)||Double.isNaN(paid))throw new Exception();}catch(Exception ex){amount.setError("Enter a valid amount");return;}
-            ContentValues expense=new ContentValues();expense.put("category",cat.getSelectedItem().toString());expense.put("description",description.getText().toString().trim());expense.putNull("item");expense.put("amount",paid);expense.put("date",iso.format(new Date()));long expenseId=db.getWritableDatabase().insert("expenses",null,expense);if(expenseId>0)pushExpense(expenseId);if(expenseId<0){Toast.makeText(this,"Could not save expense",Toast.LENGTH_LONG).show();return;}
+            ContentValues expense=new ContentValues();expense.put("category",cat.getSelectedItem().toString());expense.put("description",description.getText().toString().trim());expense.put("item",itemName);expense.put("amount",paid);expense.put("date",iso.format(new Date()));long expenseId=db.getWritableDatabase().insert("expenses",null,expense);if(expenseId>0)pushExpense(expenseId);if(expenseId<0){Toast.makeText(this,"Could not save expense",Toast.LENGTH_LONG).show();return;}
             ContentValues completed=new ContentValues();completed.put("done",1);completed.put("expense_id",expenseId);db.getWritableDatabase().update("reminders",completed,"id=?",new String[]{String.valueOf(reminderId)});pushReminder(reminderId);ReminderReceiver.cancel(this,reminderId);dialog.dismiss();Toast.makeText(this,"Purchase added to expense history",Toast.LENGTH_SHORT).show();showPage(4);
         });});dialog.show();
     }
-    private static class DB extends SQLiteOpenHelper{DB(Context c){super(c,"saqib_finance.db",null,6);}public void onCreate(SQLiteDatabase d){d.execSQL("CREATE TABLE expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,category TEXT NOT NULL,description TEXT NOT NULL,amount REAL NOT NULL,date TEXT NOT NULL,item TEXT)");d.execSQL("CREATE TABLE incomes(id INTEGER PRIMARY KEY AUTOINCREMENT,amount REAL NOT NULL,source TEXT NOT NULL,date TEXT NOT NULL,note TEXT NOT NULL DEFAULT '')");d.execSQL("CREATE TABLE reminders(id INTEGER PRIMARY KEY AUTOINCREMENT,item TEXT NOT NULL,trigger_at INTEGER NOT NULL,done INTEGER NOT NULL DEFAULT 0,estimated_amount REAL NOT NULL DEFAULT 0,expense_id INTEGER)");d.execSQL("CREATE TABLE category_items(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,category TEXT NOT NULL,icon TEXT NOT NULL DEFAULT '📦',UNIQUE(name,category))");}public void onUpgrade(SQLiteDatabase d,int o,int n){if(o<2)d.execSQL("CREATE TABLE IF NOT EXISTS reminders(id INTEGER PRIMARY KEY AUTOINCREMENT,item TEXT NOT NULL,trigger_at INTEGER NOT NULL,done INTEGER NOT NULL DEFAULT 0)");if(o<3){d.execSQL("ALTER TABLE reminders ADD COLUMN estimated_amount REAL NOT NULL DEFAULT 0");d.execSQL("ALTER TABLE reminders ADD COLUMN expense_id INTEGER");}if(o<4){d.execSQL("CREATE TABLE IF NOT EXISTS category_items(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,category TEXT NOT NULL,icon TEXT NOT NULL DEFAULT '📦',UNIQUE(name,category))");}if(o<5){d.execSQL("ALTER TABLE expenses ADD COLUMN item TEXT");d.execSQL("UPDATE expenses SET item=(SELECT name FROM category_items WHERE category_items.category=expenses.category AND category_items.name=expenses.description LIMIT 1) WHERE item IS NULL");}if(o<6){d.execSQL("CREATE TABLE IF NOT EXISTS incomes(id INTEGER PRIMARY KEY AUTOINCREMENT,amount REAL NOT NULL,source TEXT NOT NULL,date TEXT NOT NULL,note TEXT NOT NULL DEFAULT '')");}}}
+    private static class DB extends SQLiteOpenHelper{
+        DB(Context c){super(c,"saqib_finance.db",null,7);}
+        public void onOpen(SQLiteDatabase d){
+            super.onOpen(d);boolean hasGroup=false;Cursor c=d.rawQuery("PRAGMA table_info(expenses)",null);
+            while(c.moveToNext())if("group_id".equals(c.getString(1)))hasGroup=true;c.close();
+            if(!hasGroup)d.execSQL("ALTER TABLE expenses ADD COLUMN group_id TEXT");
+        }
+        public void onCreate(SQLiteDatabase d){
+            d.execSQL("CREATE TABLE expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,category TEXT NOT NULL,description TEXT NOT NULL,amount REAL NOT NULL,date TEXT NOT NULL,item TEXT,group_id TEXT)");
+            d.execSQL("CREATE TABLE incomes(id INTEGER PRIMARY KEY AUTOINCREMENT,amount REAL NOT NULL,source TEXT NOT NULL,date TEXT NOT NULL,note TEXT NOT NULL DEFAULT '')");
+            d.execSQL("CREATE TABLE reminders(id INTEGER PRIMARY KEY AUTOINCREMENT,item TEXT NOT NULL,trigger_at INTEGER NOT NULL,done INTEGER NOT NULL DEFAULT 0,estimated_amount REAL NOT NULL DEFAULT 0,expense_id INTEGER,category TEXT NOT NULL DEFAULT 'Other')");
+            d.execSQL("CREATE TABLE category_items(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,category TEXT NOT NULL,icon TEXT NOT NULL DEFAULT '📦',UNIQUE(name,category))");
+        }
+        public void onUpgrade(SQLiteDatabase d,int o,int n){
+            if(o<2)d.execSQL("CREATE TABLE IF NOT EXISTS reminders(id INTEGER PRIMARY KEY AUTOINCREMENT,item TEXT NOT NULL,trigger_at INTEGER NOT NULL,done INTEGER NOT NULL DEFAULT 0)");
+            if(o<3){d.execSQL("ALTER TABLE reminders ADD COLUMN estimated_amount REAL NOT NULL DEFAULT 0");d.execSQL("ALTER TABLE reminders ADD COLUMN expense_id INTEGER");}
+            if(o<4)d.execSQL("CREATE TABLE IF NOT EXISTS category_items(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,category TEXT NOT NULL,icon TEXT NOT NULL DEFAULT '📦',UNIQUE(name,category))");
+            if(o<5){d.execSQL("ALTER TABLE expenses ADD COLUMN item TEXT");d.execSQL("UPDATE expenses SET item=(SELECT name FROM category_items WHERE category_items.category=expenses.category AND category_items.name=expenses.description LIMIT 1) WHERE item IS NULL");}
+            if(o<6)d.execSQL("CREATE TABLE IF NOT EXISTS incomes(id INTEGER PRIMARY KEY AUTOINCREMENT,amount REAL NOT NULL,source TEXT NOT NULL,date TEXT NOT NULL,note TEXT NOT NULL DEFAULT '')");
+            if(o<7)d.execSQL("ALTER TABLE reminders ADD COLUMN category TEXT NOT NULL DEFAULT 'Other'");
+        }
+    }
 }
