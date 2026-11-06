@@ -269,15 +269,20 @@ public class MainActivity extends FragmentActivity {
     }
 
     private void addItemIcon(LinearLayout parent,String icon,int size,LinearLayout.LayoutParams params){
-        if(icon!=null&&icon.startsWith("@iconify:")){
-            String key=icon.substring(9);
+        String value=icon==null?"📦":icon.trim();
+        if(value.regionMatches(true,0,"@iconify:",0,9)){
+            String key=value.substring(9).trim();
+            if(key.isEmpty()){
+                TextView fallback=txt("📦",size,ink,true);fallback.setGravity(Gravity.CENTER);parent.addView(fallback,params);return;
+            }
             WebView web=new WebView(this);web.setBackgroundColor(Color.TRANSPARENT);web.setVerticalScrollBarEnabled(false);web.setHorizontalScrollBarEnabled(false);
-            web.getSettings().setJavaScriptEnabled(false);web.getSettings().setDomStorageEnabled(false);
+            web.setOverScrollMode(View.OVER_SCROLL_NEVER);web.setLayerType(View.LAYER_TYPE_SOFTWARE,null);
+            web.getSettings().setJavaScriptEnabled(false);web.getSettings().setDomStorageEnabled(false);web.getSettings().setLoadsImagesAutomatically(true);
             parent.addView(web,params);
             String src="https://api.iconify.design/"+key.replace(":","/")+".svg?color=%23"+(dark?"F1F4F0":"245B45");
-            String html="<html><meta name='viewport' content='width=device-width, initial-scale=1'><body style='margin:0;background:transparent;display:flex;align-items:center;justify-content:center;overflow:hidden'><img style='width:100%;height:100%;object-fit:contain' src='"+src+"'></body></html>";
+            String html="<html><head><meta name='viewport' content='width=device-width, initial-scale=1'></head><body style='margin:0;padding:0;background:transparent;display:flex;align-items:center;justify-content:center;overflow:hidden'><img alt='' style='width:100%;height:100%;object-fit:contain' src='"+src+"' onerror=\"this.style.display='none';this.parentElement.innerText='📦';this.parentElement.style.color='"+(dark?"#F1F4F0":"#245B45")+"';this.parentElement.style.fontSize='24px';\"></body></html>";
             web.loadDataWithBaseURL("https://api.iconify.design/",html,"text/html","UTF-8",null);
-        }else{TextView t=txt(icon==null?"📦":icon,size,ink,true);t.setGravity(Gravity.CENTER);parent.addView(t,params);}
+        }else{TextView t=txt(value,size,ink,true);t.setGravity(Gravity.CENTER);parent.addView(t,params);}
     }
     private void showOnlineIconPicker(String initial,String[] chosen,TextView preview,boolean[] manuallyChosen){
         LinearLayout box=col();box.setPadding(dp(8),dp(8),dp(8),dp(4));
