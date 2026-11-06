@@ -166,29 +166,57 @@ public class MainActivity extends FragmentActivity {
         LinearLayout expenseCard=card(c);LinearLayout expenseHead=row();expenseHead.addView(txt("MONEY OUT · EXPENSES",12,GOLD,true),new LinearLayout.LayoutParams(0,-2,1));TextView view=txt("View all →",12,GREEN,true);expenseHead.addView(view);view.setOnClickListener(v->showPage(2));expenseCard.addView(expenseHead);
         Cursor ec=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date,item FROM expenses ORDER BY date DESC,id DESC LIMIT 30",null);if(!ec.moveToFirst())expenseCard.addView(txt("No expenses recorded yet.",13,muted,false));else do{String cat=ec.getString(0),desc=ec.getString(1),date=ec.getString(3),item=ec.getString(4);LinearLayout r=row();r.setPadding(0,dp(9),0,dp(9));LinearLayout details=col();details.addView(txt(cat+(item==null||item.isEmpty()?"":" · "+item),13,ink,true));details.addView(txt(dateLabel(date)+(desc==null||desc.isEmpty()||desc.equals(item)?"":" · "+desc),11,muted,false));r.addView(details,new LinearLayout.LayoutParams(0,-2,1));r.addView(txt("-"+money(ec.getDouble(2)),13,0xFFB36A45,true));expenseCard.addView(r);View sep=new View(this);sep.setBackgroundColor(line);expenseCard.addView(sep,lp(-1,1));}while(ec.moveToNext());ec.close();
     }
+    private JSONArray getCustomIncomeTypes(){
+        try{return new JSONArray(getPreferences(0).getString("custom_income_types","[]"));}catch(Exception e){return new JSONArray();}
+    }
+    private void saveCustomIncomeType(String name,String icon){
+        JSONArray all=getCustomIncomeTypes();for(int i=0;i<all.length();i++){JSONObject item=all.optJSONObject(i);if(item!=null&&name.equalsIgnoreCase(item.optString("name")))return;}
+        JSONObject entry=new JSONObject();try{entry.put("name",name);entry.put("icon",icon);}catch(Exception ignored){}
+        all.put(entry);getPreferences(0).edit().putString("custom_income_types",all.toString()).apply();
+    }
+    private void showNewIncomeTypeDialog(AlertDialog parent){
+        LinearLayout box=col();box.setPadding(dp(16),dp(8),dp(16),dp(4));
+        EditText name=words(new EditText(this));name.setSingleLine(true);name.setHint("Type name (e.g. Business)");box.addView(name,lp(-1,52));
+        String[] chosen={"💰"};boolean[] manual={false};TextView preview=txt(chosen[0],34,ink,true);preview.setGravity(Gravity.CENTER);
+        LinearLayout iconRow=row();iconRow.setGravity(Gravity.CENTER_VERTICAL);iconRow.addView(preview,lp(66,60));
+        LinearLayout actions=col();Button choose=smallFilter("Choose icon");actions.addView(choose,lp(-1,40));
+        Button online=smallFilter("Browse online icons");LinearLayout.LayoutParams onlineLp=lp(-1,38);onlineLp.topMargin=dp(5);actions.addView(online,onlineLp);iconRow.addView(actions,new LinearLayout.LayoutParams(0,-2,1));box.addView(iconRow);
+        choose.setOnClickListener(v->showItemIconPicker(chosen,preview,manual));online.setOnClickListener(v->showOnlineIconPicker(name.getText().toString().trim(),chosen,preview,manual));
+        new AlertDialog.Builder(this).setTitle("Add Money Type").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Save",(d,w)->{
+            String n=name.getText().toString().trim();if(n.isEmpty()){Toast.makeText(this,"Enter a type name",Toast.LENGTH_SHORT).show();return;}
+            if(Arrays.asList("Salary","Gift","Borrow","Other").contains(n)){Toast.makeText(this,"This type already exists",Toast.LENGTH_SHORT).show();return;}
+            JSONArray existing=getCustomIncomeTypes();for(int i=0;i<existing.length();i++){JSONObject item=existing.optJSONObject(i);if(item!=null&&n.equalsIgnoreCase(item.optString("name"))){Toast.makeText(this,"This type already exists",Toast.LENGTH_SHORT).show();return;}}
+            saveCustomIncomeType(n,chosen[0]);parent.dismiss();Toast.makeText(this,"Money type saved",Toast.LENGTH_SHORT).show();showAddIncomeDialog();
+        }).show();
+    }
     private void showAddIncomeDialog(){
-        final String[] types={"Salary","Gift","Borrow","Other"};
-        final String[] typeIcons={"💼","🎁","🤝","💰"};
+        ArrayList<String> types=new ArrayList<>(Arrays.asList("Salary","Gift","Borrow"));
+        ArrayList<String> typeIcons=new ArrayList<>(Arrays.asList("💼","🎁","🤝"));
+        JSONArray custom=getCustomIncomeTypes();for(int i=0;i<custom.length();i++){JSONObject item=custom.optJSONObject(i);if(item!=null){String n=item.optString("name","").trim();if(!n.isEmpty()&&!types.contains(n)){types.add(n);typeIcons.add(item.optString("icon","💰"));}}}
+        types.add("Other");typeIcons.add("+");
         final String[] selectedType={"Salary"};
-        final LinearLayout[] typeTiles=new LinearLayout[4];
+        final ArrayList<LinearLayout> typeTiles=new ArrayList<>();
         LinearLayout box=col();box.setPadding(dp(18),dp(8),dp(18),dp(8));
         TextView typeHeading=txt("SELECT TYPE",12,muted,true);typeHeading.setPadding(dp(2),0,0,dp(7));box.addView(typeHeading);
-        for(int i=0;i<4;i+=2){
+        for(int i=0;i<types.size();i+=2){
             LinearLayout typeRow=row();LinearLayout.LayoutParams rowParams=lp(-1,-2);rowParams.bottomMargin=dp(7);box.addView(typeRow,rowParams);
-            for(int j=i;j<i+2;j++){
-                final int index=j;
+            for(int j=i;j<Math.min(i+2,types.size());j++){
+                final int index=j;final String typeName=types.get(j);final boolean addNew=typeName.equals("Other");
                 LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(8),dp(8),dp(8),dp(7));
-                tile.setBackground(shape(types[j].equals(selectedType[0])?0xFFDCEBFF:0xFFEFF5FD,14));
+                tile.setBackground(shape(typeName.equals(selectedType[0])?0xFFDCEBFF:0xFFEFF5FD,14));
                 LinearLayout.LayoutParams tileParams=new LinearLayout.LayoutParams(0,dp(76),1);if(j>i)tileParams.leftMargin=dp(7);typeRow.addView(tile,tileParams);
-                TextView icon=txt(typeIcons[j],25,ink,true);icon.setGravity(Gravity.CENTER);tile.addView(icon,lp(-1,37));
-                TextView label=txt(types[j],13,ink,true);label.setGravity(Gravity.CENTER);tile.addView(label);
-                typeTiles[j]=tile;
-                tile.setOnClickListener(v->{selectedType[0]=types[index];for(int k=0;k<4;k++)typeTiles[k].setBackground(shape(k==index?0xFFDCEBFF:0xFFEFF5FD,14));});
+                TextView icon=txt(typeIcons.get(j),addNew?30:25,ink,true);icon.setGravity(Gravity.CENTER);tile.addView(icon,lp(-1,37));
+                TextView label=txt(addNew?"Add New":typeName,13,ink,true);label.setGravity(Gravity.CENTER);tile.addView(label);
+                typeTiles.add(tile);
+                tile.setOnClickListener(v->{if(addNew){showNewIncomeTypeDialog(dialogHolder[0]);return;}selectedType[0]=typeName;for(int k=0;k<typeTiles.size();k++)typeTiles.get(k).setBackground(shape(k==index?0xFFDCEBFF:0xFFEFF5FD,14));});
             }
         }
         EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Amount (Rs.)");amount.setTextColor(ink);amount.setHintTextColor(muted);amount.setPadding(dp(14),dp(10),dp(14),dp(10));amount.setBackground(shape(bg,12));LinearLayout.LayoutParams amountLp=lp(-1,54);amountLp.topMargin=dp(8);box.addView(amount,amountLp);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Add Money In").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Add",null).create();
+        dialogHolder[0]=dialog;
         dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{try{double value=Double.parseDouble(amount.getText().toString().trim());if(value<=0||Double.isInfinite(value)||Double.isNaN(value))throw new Exception();ContentValues cv=new ContentValues();cv.put("amount",value);cv.put("source",selectedType[0]);cv.put("date",iso.format(new Date()));cv.put("note","");long id=db.getWritableDatabase().insert("incomes",null,cv);if(id<=0)throw new Exception();pushIncome(id);dialog.dismiss();Toast.makeText(this,"Money received saved",Toast.LENGTH_SHORT).show();showPage(6);}catch(Exception e){amount.setError("Enter a valid amount");}}));dialog.show();
+    }
+setError("Enter a valid amount");}}));dialog.show();
     }
     private void editIncome(long id,double value,String sourceValue,String dateValue,String noteValue){
         LinearLayout box=col();EditText amount=new EditText(this);amount.setInputType(8194);amount.setText(String.valueOf(value));box.addView(amount);EditText source=new EditText(this);source.setText(sourceValue);source.setHint("Received from");box.addView(source);
