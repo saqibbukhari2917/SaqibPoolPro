@@ -33,7 +33,7 @@ public class MainActivity extends FragmentActivity {
     private ConnectivityManager.NetworkCallback cloudNetworkCallback;
     private static final String[] CATS={"Kids","Wife","Family","Personal","Medicine","Grocery","Transport","Bills","Shopping","Dining","Other"};
     private static final int GREEN=0xFF245B45, DEEP=0xFF123B2D, GOLD=0xFFE3B65C, MINT=0xFFEAF1E8;
-    private DB db; private LinearLayout root,body,nav; private int page=0; private boolean dark=false;
+    private boolean categoryGridView=true; private DB db; private LinearLayout root,body,nav; private int page=0; private boolean dark=false;
     private Calendar month=Calendar.getInstance(); private String from="",to="",category="All categories",selectedAddCategory="Grocery",pendingItemName="";
     private TextView totalText,countText,monthText,pendingCloudText; private LinearLayout historyList;
     private final SimpleDateFormat iso=new SimpleDateFormat("yyyy-MM-dd",Locale.US);
@@ -144,10 +144,38 @@ public class MainActivity extends FragmentActivity {
         pageHeader(cat,"Choose an item or add your own");LinearLayout c=content();LinearLayout panel=card(c);
         panel.addView(txt("ITEMS IN "+cat.toUpperCase(Locale.US),11,GOLD,true));
         Button add=primaryButton("+  New Item");LinearLayout.LayoutParams al=lp(-1,46);al.topMargin=dp(10);panel.addView(add,al);add.setOnClickListener(v->showNewItemDialog(cat));
+        LinearLayout viewBar=row();viewBar.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);viewBar.setPadding(0,dp(10),0,dp(8));
+        Button gridBtn=smallFilter("▦  Grid"),listBtn=smallFilter("☰  List");
+        gridBtn.setTextColor(categoryGridView?Color.WHITE:GREEN);gridBtn.setBackground(shape(categoryGridView?GREEN:MINT,9));
+        listBtn.setTextColor(!categoryGridView?Color.WHITE:GREEN);listBtn.setBackground(shape(!categoryGridView?GREEN:MINT,9));
+        viewBar.addView(gridBtn,lp(94,38));LinearLayout.LayoutParams bl=lp(94,38);bl.leftMargin=dp(7);viewBar.addView(listBtn,bl);panel.addView(viewBar);
+        gridBtn.setOnClickListener(v->{categoryGridView=true;showPage(5);});listBtn.setOnClickListener(v->{categoryGridView=false;showPage(5);});
+        LinearLayout items=col();panel.addView(items);
+        ArrayList<Long> ids=new ArrayList<>();ArrayList<String> names=new ArrayList<>(),icons=new ArrayList<>();
         Cursor q=db.getReadableDatabase().rawQuery("SELECT id,name,icon FROM category_items WHERE category=? ORDER BY name COLLATE NOCASE",new String[]{cat});
-        if(!q.moveToFirst()){TextView empty=txt("No items yet. Tap New Item to add your first item.",13,muted,false);empty.setPadding(0,dp(16),0,dp(12));panel.addView(empty);}
-        else do{final long id=q.getLong(0);final String name=q.getString(1),ic=q.getString(2);LinearLayout r=row();r.setPadding(dp(5),dp(9),dp(5),dp(9));r.addView(txt(ic==null?"📦":ic,24,ink,true),lp(42,42));r.addView(txt(name,14,ink,true),new LinearLayout.LayoutParams(0,-2,1));r.addView(txt("›",24,GREEN,true));r.setOnClickListener(v->{selectedAddCategory=cat;pendingItemName=name;showPage(1);});r.setOnLongClickListener(v->{showMoveItemDialog(id,name,cat);return true;});panel.addView(r);View sep=new View(this);sep.setBackgroundColor(line);panel.addView(sep,lp(-1,1));}while(q.moveToNext());q.close();
-        TextView hint=txt("Long-press an item to move it to another category or delete it.",11,muted,false);hint.setPadding(dp(4),dp(4),dp(4),dp(12));c.addView(hint);
+        while(q.moveToNext()){ids.add(q.getLong(0));names.add(q.getString(1));icons.add(q.getString(2));}q.close();
+        if(ids.isEmpty()){TextView empty=txt("No items yet. Tap New Item to add your first item.",13,muted,false);empty.setPadding(0,dp(16),0,dp(12));items.addView(empty);}
+        else if(categoryGridView){
+            for(int i=0;i<ids.size();i+=2){
+                LinearLayout gridRow=row();LinearLayout.LayoutParams rp=lp(-1,-2);rp.topMargin=dp(4);items.addView(gridRow,rp);
+                for(int j=i;j<Math.min(i+2,ids.size());j++){
+                    final long id=ids.get(j);final String name=names.get(j),ic=icons.get(j);
+                    LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(8),dp(12),dp(8),dp(12));tile.setBackground(shape(MINT,14));
+                    LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,dp(104),1);if(j>i)tp.leftMargin=dp(8);gridRow.addView(tile,tp);
+                    TextView symbol=txt(ic==null?"📦":ic,28,ink,true);symbol.setGravity(Gravity.CENTER);tile.addView(symbol,lp(-1,40));
+                    TextView label=txt(name,13,ink,true);label.setGravity(Gravity.CENTER);label.setMaxLines(2);tile.addView(label);
+                    tile.setOnClickListener(v->{selectedAddCategory=cat;pendingItemName=name;showPage(1);});
+                    tile.setOnLongClickListener(v->{showMoveItemDialog(id,name,cat);return true;});
+                }
+            }
+        }else{
+            for(int i=0;i<ids.size();i++){
+                final long id=ids.get(i);final String name=names.get(i),ic=icons.get(i);
+                LinearLayout r=row();r.setPadding(dp(5),dp(9),dp(5),dp(9));r.addView(txt(ic==null?"📦":ic,24,ink,true),lp(42,42));r.addView(txt(name,14,ink,true),new LinearLayout.LayoutParams(0,-2,1));r.addView(txt("›",24,GREEN,true));
+                r.setOnClickListener(v->{selectedAddCategory=cat;pendingItemName=name;showPage(1);});r.setOnLongClickListener(v->{showMoveItemDialog(id,name,cat);return true;});items.addView(r);View sep=new View(this);sep.setBackgroundColor(line);items.addView(sep,lp(-1,1));
+            }
+        }
+        TextView hint=txt("Long-press an item to move it to another category or delete it.",11,muted,false);hint.setPadding(dp(4),dp(10),dp(4),dp(12));c.addView(hint);
     }
     private void showNewItemDialog(String cat){EditText name=new EditText(this);name.setSingleLine(true);name.setHint("Enter item name");new AlertDialog.Builder(this).setTitle("New item · "+cat).setView(name).setNegativeButton("Cancel",null).setPositiveButton("Add",(d,w)->{String n=name.getText().toString().trim();if(n.isEmpty()){Toast.makeText(this,"Enter an item name",Toast.LENGTH_SHORT).show();return;}ContentValues cv=new ContentValues();cv.put("name",n);cv.put("category",cat);cv.put("icon",suggestItemIcon(n));long id=db.getWritableDatabase().insertWithOnConflict("category_items",null,cv,SQLiteDatabase.CONFLICT_IGNORE);if(id==-1)Toast.makeText(this,"Item already exists in this category",Toast.LENGTH_SHORT).show();showPage(5);}).show();}
     private String suggestItemIcon(String name){String n=name.toLowerCase(Locale.US);if(n.contains("shoe"))return "👟";if(n.contains("cloth")||n.contains("dress"))return "👕";if(n.contains("milk"))return "🥛";if(n.contains("egg"))return "🥚";if(n.contains("bread"))return "🍞";if(n.contains("rice"))return "🍚";if(n.contains("oil"))return "🫗";if(n.contains("soap"))return "🧼";if(n.contains("book")||n.contains("school"))return "📚";if(n.contains("toy"))return "🧸";if(n.contains("makeup")||n.contains("care"))return "🧴";if(n.contains("tablet")||n.contains("syrup")||n.contains("doctor")||n.contains("test"))return "💊";if(n.contains("dinner")||n.contains("outing"))return "🍽️";if(n.contains("gift"))return "🎁";return "📦";}
