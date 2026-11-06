@@ -4,6 +4,9 @@ import android.app.*;
 import android.os.Bundle;
 import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.BitmapFactory;
+import android.view.Gravity;
 import android.database.Cursor;
 import android.database.sqlite.*;
 import android.content.*;
@@ -91,7 +94,7 @@ public class MainActivity extends FragmentActivity {
     private String money(double v){return "Rs. "+String.format(Locale.US,"%,.0f",v);}
     private String dateLabel(String s){try{return display.format(iso.parse(s));}catch(Exception e){return s;}}
     private void buildShell(){
-        root=col();root.setBackgroundColor(bg);setContentView(root);
+        root=col();if(dark){root.setBackgroundColor(bg);}else{BitmapDrawable wallpaper=new BitmapDrawable(getResources(),BitmapFactory.decodeResource(getResources(),R.drawable.app_watermark));wallpaper.setGravity(Gravity.FILL);root.setBackground(wallpaper);}setContentView(root);
         homeBrandBar=homeBrandHeader();root.addView(homeBrandBar,lp(-1,88));
         FrameLayout frame=new FrameLayout(this);root.addView(frame,new LinearLayout.LayoutParams(-1,0,1));
         pageScroll=new ScrollView(this);pageScroll.setFillViewport(true);pageScroll.setVerticalScrollBarEnabled(false);swipeDetector=new GestureDetector(this,new GestureDetector.SimpleOnGestureListener(){@Override public boolean onDown(MotionEvent e){return true;}@Override public boolean onFling(MotionEvent e1,MotionEvent e2,float velocityX,float velocityY){float dx=e2.getX()-e1.getX(),dy=e2.getY()-e1.getY();if(Math.abs(dx)>dp(80)&&Math.abs(dx)>Math.abs(dy)*1.35f&&Math.abs(velocityX)>dp(350)){int tab=currentTab();int nextTab=dx<0?Math.min(4,tab+1):Math.max(0,tab-1);if(nextTab!=tab){if(nextTab!=4)reminderFlow=false;showPage(nextTab);}return true;}return false;}});pageScroll.setOnTouchListener((v,event)->{swipeDetector.onTouchEvent(event);return false;});body=col();body.setPadding(0,0,0,dp(22));pageScroll.addView(body);frame.addView(pageScroll,new FrameLayout.LayoutParams(-1,-1));
@@ -99,7 +102,7 @@ public class MainActivity extends FragmentActivity {
     }
     private int currentTab(){if(page==5)return 1;if(page>=7&&page<=9)return 4;if(page==6)return 0;return Math.max(0,Math.min(4,page));}
     private void showPage(int p){
-        page=p;if(homeBrandBar!=null)homeBrandBar.setVisibility(p==0?View.VISIBLE:View.GONE);if(pageScroll!=null)pageScroll.scrollTo(0,0);body.removeAllViews();nav.removeAllViews();body.setBackgroundColor(bg);
+        page=p;if(homeBrandBar!=null)homeBrandBar.setVisibility(p==0?View.VISIBLE:View.GONE);if(pageScroll!=null)pageScroll.scrollTo(0,0);body.removeAllViews();nav.removeAllViews();body.setBackgroundColor(Color.TRANSPARENT);
         if(p==0)homePage();else if(p==1)addPage();else if(p==2)historyPage();else if(p==3)settingsPage();else if(p==4)remindersPage();else if(p==5)categoryItemsPage(selectedAddCategory);else if(p==6)balancePage();else if(p==7)reminderCategoryPage();else if(p==8)reminderItemsPage();else if(p==9)reminderDetailsPage();
         String[] labels={"Home","Add","History","Settings","Reminders"};String[] icons={"⌂","+","▤","⚙","◷"};
         for(int i=0;i<5;i++){final int index=i;LinearLayout item=col();item.setGravity(Gravity.CENTER);boolean active=(i==p)||(p==5&&i==1)||(p>=7&&i==4);TextView ic=txt(icons[i],22,active?GOLD:0xFFDCE8FA,true);ic.setGravity(Gravity.CENTER);TextView label=txt(labels[i],10,active?Color.WHITE:0xFFB8CBE8,active);label.setGravity(Gravity.CENTER);item.addView(ic);item.addView(label);item.setOnClickListener(v->{if(index!=4)reminderFlow=false;showPage(index);});nav.addView(item,new LinearLayout.LayoutParams(0,-1,1));}
