@@ -5,29 +5,38 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Rounded blue brand background -->
-    <path
-        android:fillColor="#6F9FE6"
-        android:pathData="M18,0h72c9.94,0 18,8.06 18,18v72c0,9.94 -8.06,18 -18,18h-72c-9.94,0 -18,-8.06 -18,-18v-72c0,-9.94 8.06,-18 18,-18z" />
+    <!-- Deep blue rounded app tile, matching the supplied Saqib Finance header -->
+    <path android:fillColor="#0750B8"
+        android:pathData="M24,0h60c13.25,0 24,10.75 24,24v60c0,13.25 -10.75,24 -24,24h-60c-13.25,0 -24,-10.75 -24,-24v-60c0,-13.25 10.75,-24 24,-24z"/>
 
-    <!-- Soft inner blue panel -->
-    <path
-        android:fillColor="#527FCB"
-        android:pathData="M18,8h72c5.52,0 10,4.48 10,10v72c0,5.52 -4.48,10 -10,10h-72c-5.52,0 -10,-4.48 -10,-10v-72c0,-5.52 4.48,-10 10,-10z" />
+    <!-- White stylized S -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M73,21c-7,-8 -17,-12 -29,-12c-18,0 -30,10 -30,25c0,14 10,21 27,26l10,3c9,3 13,6 13,12c0,7 -7,12 -17,12c-11,0 -20,-5 -27,-14l-9,10c9,12 22,18 37,18c21,0 35,-12 35,-29c0,-14 -9,-23 -28,-29l-11,-3c-9,-3 -13,-6 -13,-11c0,-6 6,-10 14,-10c9,0 16,3 22,9z"/>
 
-    <!-- Bold white S monogram -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M70,28c-6,-7 -15,-10 -26,-10c-17,0 -28,9 -28,23c0,13 9,19 25,23l10,3c8,2 11,5 11,10c0,6 -6,10 -15,10c-9,0 -17,-4 -23,-11l-12,13c8,10 20,15 35,15c19,0 32,-10 32,-27c0,-13 -8,-21 -25,-26l-10,-3c-8,-2 -11,-5 -11,-9c0,-5 5,-8 12,-8c7,0 13,2 18,7z" />
+    <!-- White curved flourish behind the S -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M66,8c14,-5 29,1 34,13c4,10 1,22 -8,31c-4,4 -9,7 -14,9l-3,-7c5,-2 9,-5 12,-8c6,-6 8,-14 5,-21c-4,-9 -15,-13 -25,-9z"/>
 
-    <!-- Gold coin accent -->
-    <path
-        android:fillColor="#F7BD45"
-        android:pathData="M79,11a17,17 0,1 0,0 34a17,17 0,1 0,0 -34z" />
-    <path
-        android:fillColor="#FFE08A"
-        android:pathData="M79,15a13,13 0,1 0,0 26a13,13 0,1 0,0 -26z" />
-    <path
-        android:fillColor="#D99520"
-        android:pathData="M84,20c-2,-2 -5,-3 -8,-2c-4,1 -6,5 -4,8c1,2 3,3 7,4c3,1 4,2 4,4c0,3 -3,5 -6,5c-3,0 -6,-1 -8,-4l-3,3c2,3 5,5 9,5v3h4v-3c5,-1 8,-4 8,-9c0,-4 -3,-7 -8,-8c-3,-1 -4,-2 -4,-3c0,-2 2,-3 4,-3c2,0 4,1 5,2z" />
+    <!-- Small turquoise accent from the reference mark -->
+    <path android:fillColor="#19C6C5"
+        android:pathData="M91,48c5,-5 8,-11 8,-17c2,8 0,17 -6,24c-3,4 -8,7 -13,9l-3,-7c5,-2 10,-5 14,-9z"/>
+
+    <!-- Gold coin stack at lower-right -->
+    <path android:fillColor="#E99A00"
+        android:pathData="M57,83c0,-5 10,-9 22,-9s22,4 22,9v7c0,5 -10,9 -22,9s-22,-4 -22,-9z"/>
+    <path android:fillColor="#FFC21A"
+        android:pathData="M57,78c0,-5 10,-9 22,-9s22,4 22,9s-10,9 -22,9s-22,-4 -22,-9z"/>
+    <path android:fillColor="#FFD84A"
+        android:pathData="M62,78c0,-3 8,-6 17,-6s17,3 17,6s-8,6 -17,6s-17,-3 -17,-6z"/>
+
+    <path android:fillColor="#D98700"
+        android:pathData="M70,92c0,-5 8,-8 18,-8s18,3 18,8v6c0,5 -8,8 -18,8s-18,-3 -18,-8z"/>
+    <path android:fillColor="#FFB900"
+        android:pathData="M70,88c0,-5 8,-8 18,-8s18,3 18,8s-8,8 -18,8s-18,-3 -18,-8z"/>
+    <path android:fillColor="#FFE06A"
+        android:pathData="M75,88c0,-3 6,-5 13,-5s13,2 13,5s-6,5 -13,5s-13,-2 -13,-5z"/>
+
+    <!-- Gold curved underline -->
+    <path android:fillColor="#F5B51B"
+        android:pathData="M9,78c-3,9 2,17 12,20c10,3 22,0 31,-7l4,5c-11,10 -26,14 -39,10c-15,-5 -21,-18 -14,-31z"/>
 </vector>
