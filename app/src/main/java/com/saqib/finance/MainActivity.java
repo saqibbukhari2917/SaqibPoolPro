@@ -548,6 +548,15 @@ public class MainActivity extends FragmentActivity {
     private void settingsPage(){
         pageHeader("Settings","Make Saqib Finance feel like yours");
         LinearLayout c=content();
+        LinearLayout reminderAlerts=card(c);
+        reminderAlerts.addView(txt("REMINDER ALERTS",10,GOLD,true));
+        reminderAlerts.addView(txt("Reminder sound and vibration",17,ink,true));
+        reminderAlerts.addView(txt("Choose how scheduled buy reminders alert you.",12,muted,false));
+        Switch reminderTune=new Switch(this);reminderTune.setText("Reminder Tune");reminderTune.setTextColor(ink);reminderTune.setChecked(getPreferences(0).getBoolean("reminder_sound_enabled",true));reminderTune.setPadding(0,dp(12),0,0);reminderAlerts.addView(reminderTune);
+        Switch reminderVibration=new Switch(this);reminderVibration.setText("Vibration");reminderVibration.setTextColor(ink);reminderVibration.setChecked(getPreferences(0).getBoolean("reminder_vibration_enabled",true));reminderVibration.setPadding(0,dp(8),0,0);reminderAlerts.addView(reminderVibration);
+        reminderTune.setOnCheckedChangeListener((button,on)->getPreferences(0).edit().putBoolean("reminder_sound_enabled",on).apply());
+        reminderVibration.setOnCheckedChangeListener((button,on)->getPreferences(0).edit().putBoolean("reminder_vibration_enabled",on).apply());
+
         LinearLayout security=card(c);
         security.addView(txt("SECURITY",10,GOLD,true));
         security.addView(txt("App screen lock",17,ink,true));
