@@ -724,9 +724,12 @@ public class MainActivity extends FragmentActivity {
             if(match.moveToFirst())currentItem=match.getString(0);match.close();
         }
         final String initialItem=currentItem;
-        LinearLayout box=col();
+        LinearLayout box=col();box.setPadding(dp(20),dp(10),dp(20),dp(8));
+        box.setBackgroundColor(surface);
         Spinner sp=new Spinner(this);sp.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));sp.setSelection(Math.max(0,Arrays.asList(CATS).indexOf(cat)));
         Spinner itemSpinner=new Spinner(this);loadExpenseItems(cat,itemSpinner,initialItem);
+        sp.setPadding(dp(12),dp(5),dp(12),dp(5));itemSpinner.setPadding(dp(12),dp(5),dp(12),dp(5));
+        sp.setBackground(shape(bg,10));itemSpinner.setBackground(shape(bg,10));
         sp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
             public void onNothingSelected(AdapterView<?> a){}
             public void onItemSelected(AdapterView<?> a,View v,int pos,long itemId){
@@ -735,14 +738,15 @@ public class MainActivity extends FragmentActivity {
                 loadExpenseItems(selectedCategory,itemSpinner,preserve);
             }
         });
-        EditText de=new EditText(this);de.setHint("Description (optional)");de.setText(desc);
-        EditText am=new EditText(this);am.setInputType(8194);am.setText(String.valueOf(value));
-        TextView dt=txt(dateLabel(date),14,ink,true);dt.setPadding(dp(10),dp(12),dp(10),dp(12));dt.setOnClickListener(v->pickDate(dt));
-        box.addView(txt("Category",12,muted,true));box.addView(sp);
-        box.addView(txt("Item",12,muted,true));box.addView(itemSpinner);
-        box.addView(txt("Description (optional)",12,muted,true));box.addView(de);
-        box.addView(txt("Amount (Rs.)",12,muted,true));box.addView(am);
-        box.addView(txt("Date",12,muted,true));box.addView(dt);
+        EditText de=words(new EditText(this));de.setHint("Description (optional)");de.setText(desc);
+        EditText am=new EditText(this);am.setInputType(8194);am.setText(String.valueOf(value));am.setSingleLine(true);
+        for(EditText field:new EditText[]{de,am}){field.setTextColor(ink);field.setHintTextColor(muted);field.setPadding(dp(14),dp(10),dp(14),dp(10));field.setMinHeight(dp(52));field.setBackground(shape(bg,10));}
+        TextView dt=txt(dateLabel(date),14,ink,true);dt.setPadding(dp(14),dp(13),dp(14),dp(13));dt.setBackground(shape(bg,10));dt.setOnClickListener(v->pickDate(dt));
+        TextView categoryLabel=txt("Category",12,muted,true);categoryLabel.setPadding(dp(2),dp(9),0,dp(4));box.addView(categoryLabel);box.addView(sp,lp(-1,50));
+        TextView itemLabel=txt("Item",12,muted,true);itemLabel.setPadding(dp(2),dp(10),0,dp(4));box.addView(itemLabel);box.addView(itemSpinner,lp(-1,50));
+        TextView descLabel=txt("Description (optional)",12,muted,true);descLabel.setPadding(dp(2),dp(10),0,dp(4));box.addView(descLabel);box.addView(de,lp(-1,52));
+        TextView amountLabel=txt("Amount (Rs.)",12,muted,true);amountLabel.setPadding(dp(2),dp(10),0,dp(4));box.addView(amountLabel);box.addView(am,lp(-1,52));
+        TextView dateLabelView=txt("Date",12,muted,true);dateLabelView.setPadding(dp(2),dp(10),0,dp(4));box.addView(dateLabelView);box.addView(dt,lp(-1,50));
         new AlertDialog.Builder(this).setTitle("Edit expense").setView(box)
             .setNegativeButton("Cancel",null)
             .setNeutralButton("Delete",(x,y)->new AlertDialog.Builder(this).setMessage("Delete this expense?").setNegativeButton("Cancel",null).setPositiveButton("Delete",(z,w)->{db.getWritableDatabase().delete("expenses","id=?",new String[]{String.valueOf(id)});deleteCloudRecord("expenses",id);refreshHistory();}).show())
