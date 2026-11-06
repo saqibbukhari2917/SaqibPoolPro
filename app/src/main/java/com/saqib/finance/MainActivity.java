@@ -348,7 +348,7 @@ public class MainActivity extends FragmentActivity {
             SQLiteDatabase sql=db.getWritableDatabase();ContentValues item=new ContentValues();item.put("name",next);int changed=sql.update("category_items",item,"id=?",new String[]{String.valueOf(id)});
             if(changed>0){
                 deleteCloudCategoryItem(cat,oldName);pushCategoryItem(id);
-                Cursor legacy=sql.rawQuery("SELECT id FROM expenses WHERE category=? AND item IS NULL AND description=?",new String[]{cat,oldName});
+                Cursor legacy=sql.rawQuery("SELECT id,description FROM expenses WHERE category=? AND (item=? OR (item IS NULL AND description=?))",new String[]{cat,oldName,oldName});
                 ArrayList<Long> ids=new ArrayList<>();while(legacy.moveToNext())ids.add(legacy.getLong(0));legacy.close();
                 for(long expenseId:ids){ContentValues cv=new ContentValues();cv.put("item",next);cv.put("description","");sql.update("expenses",cv,"id=?",new String[]{String.valueOf(expenseId)});pushExpense(expenseId);}
                 selectedAddCategory=cat;showPage(5);Toast.makeText(this,"Item renamed",Toast.LENGTH_SHORT).show();
