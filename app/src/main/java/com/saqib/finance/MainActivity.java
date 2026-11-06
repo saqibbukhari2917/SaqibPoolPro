@@ -138,7 +138,7 @@ public class MainActivity extends FragmentActivity {
     private void loadMonth(Chart chart,TextView historyCount,TextView historyAmount){String key=new SimpleDateFormat("yyyy-MM",Locale.US).format(month.getTime());Map<String,Double> data=new LinkedHashMap<>();double total=0;int count=0;for(String s:CATS)data.put(s,0d);Cursor q=db.getReadableDatabase().rawQuery("SELECT category,SUM(amount),COUNT(*) FROM expenses WHERE substr(date,1,7)=? GROUP BY category",new String[]{key});while(q.moveToNext()){String cat=q.getString(0);double val=q.getDouble(1);data.put(cat,val);total+=val;count+=q.getInt(2);}q.close();totalText.setText(money(total));countText.setText(count+" expense"+(count==1?"":"s")+" recorded");historyCount.setText(count+" records");historyAmount.setText(money(total));chart.setData(data,total);}
     private void addCategoryGrid(LinearLayout parent){
         String[] icons={"🧒","💍","👨‍👩‍👧","🧴","💊","🛒","🏍️","🧾","🛍️","🍽️","📦"};
-        int[] tints={0xFFE7F0FC,0xFFEAF1FB,0xFFE4EEFA,0xFFEDF3FC,0xFFE6EFFB,0xFFEAF2FC,0xFFE3EEFA,0xFFE9F1FC,0xFFE5EEFA,0xFFEDF3FC,0xFFE7F0FC};
+        int[] tints={0xB8E7F0FC,0xB8EAF1FB,0xB8E4EEFA,0xB8EDF3FC,0xB8E6EFFB,0xB8EAF2FC,0xB8E3EEFA,0xB8E9F1FC,0xB8E5EEFA,0xB8EDF3FC,0xB8E7F0FC};
         for(int i=0;i<CATS.length;i+=4){
             LinearLayout lineRow=row();LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(8);parent.addView(lineRow,rowLp);
             for(int j=i;j<Math.min(i+4,CATS.length);j++){
