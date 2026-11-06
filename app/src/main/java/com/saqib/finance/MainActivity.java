@@ -909,6 +909,12 @@ public class MainActivity extends FragmentActivity {
 
         LinearLayout categoryScreen=col();
         c.addView(categoryScreen,lp(-1,-2));
+        LinearLayout itemScreen=col();itemScreen.setVisibility(View.GONE);c.addView(itemScreen,lp(-1,-2));
+        TextView itemTitle=txt("",17,ink,true);itemScreen.addView(itemTitle);
+        LinearLayout itemGrid=col();itemScreen.addView(itemGrid,lp(-1,-2));
+        final LinearLayout[] currentItemRow={null};
+        TextView selectedItem=txt("Select An Item",13,muted,true);selectedItem.setPadding(dp(4),dp(12),dp(4),dp(8));itemScreen.addView(selectedItem);
+        Button doneButton=primaryButton("Done");doneButton.setEnabled(false);itemScreen.addView(doneButton,lp(-1,46));
         LinearLayout categoryGrid=col();
         String[] all=cats();
         for(int i=0;i<all.length;i+=2){
@@ -946,13 +952,7 @@ public class MainActivity extends FragmentActivity {
         }
         categoryScreen.addView(categoryGrid,lp(-1,-2));
 
-        LinearLayout itemScreen=col();itemScreen.setVisibility(View.GONE);c.addView(itemScreen,lp(-1,-2));
         TextView itemBack=txt("‹  Categories",14,BLUE,true);itemBack.setPadding(0,dp(4),0,dp(10));itemScreen.addView(itemBack);itemBack.setOnClickListener(v->{itemScreen.setVisibility(View.GONE);categoryScreen.setVisibility(View.VISIBLE);});
-        TextView itemTitle=txt("",17,ink,true);itemScreen.addView(itemTitle);
-        LinearLayout itemGrid=col();itemScreen.addView(itemGrid,lp(-1,-2));
-        final LinearLayout[] currentItemRow={null};
-        TextView selectedItem=txt("Select An Item",13,muted,true);selectedItem.setPadding(dp(4),dp(12),dp(4),dp(8));itemScreen.addView(selectedItem);
-        Button doneButton=primaryButton("Done");doneButton.setEnabled(false);itemScreen.addView(doneButton,lp(-1,46));
 
         LinearLayout formScreen=col();formScreen.setVisibility(View.GONE);c.addView(formScreen,lp(-1,-2));
         TextView formBack=txt("‹  Items",14,BLUE,true);formBack.setPadding(0,dp(4),0,dp(10));formScreen.addView(formBack);formBack.setOnClickListener(v->{formScreen.setVisibility(View.GONE);itemScreen.setVisibility(View.VISIBLE);});
