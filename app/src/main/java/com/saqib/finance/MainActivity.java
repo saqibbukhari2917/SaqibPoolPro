@@ -43,6 +43,17 @@ public class MainActivity extends FragmentActivity {
     @Override public void onCreate(Bundle b){super.onCreate(b);dark=getPreferences(0).getBoolean("dark",false);db=new DB(this);seedDefaultItems();setupGoogleSignIn();registerCloudNetworkCallback();applyCloudNetworkPreference();if(FirebaseAuth.getInstance().getCurrentUser()!=null)syncAllCloud();palette();if(getPreferences(0).getBoolean("screen_lock",true)){showLockScreen();showSecurityPrompt();}else{unlocked=true;openMainUI(0);}}
     @Override protected void onResume(){super.onResume();if(getPreferences(0).getBoolean("screen_lock",true)&&!unlocked&&!lockPromptShowing){showLockScreen();showSecurityPrompt();}}
     @Override protected void onStop(){super.onStop();if(!isChangingConfigurations()&&getPreferences(0).getBoolean("screen_lock",true)&&getPreferences(0).getBoolean("lock_on_recent_apps",false)){unlocked=false;showLockScreen();}}
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed(){
+        if(!unlocked){super.onBackPressed();return;}
+        if(page!=0){
+            showPage(0);
+            return;
+        }
+        super.onBackPressed();
+    }
+
     private void openMainUI(int targetPage){uiReady=true;palette();buildShell();showPage(targetPage);}
     private void showLockScreen(){
         LinearLayout lock=col();lock.setGravity(Gravity.CENTER);lock.setBackgroundColor(DEEP);lock.setPadding(dp(28),dp(28),dp(28),dp(28));
