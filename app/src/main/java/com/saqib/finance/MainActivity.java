@@ -217,7 +217,6 @@ public class MainActivity extends FragmentActivity {
         dialogHolder[0]=dialog;
         dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{try{double value=Double.parseDouble(amount.getText().toString().trim());if(value<=0||Double.isInfinite(value)||Double.isNaN(value))throw new Exception();ContentValues cv=new ContentValues();cv.put("amount",value);cv.put("source",selectedType[0]);cv.put("date",iso.format(new Date()));cv.put("note","");long id=db.getWritableDatabase().insert("incomes",null,cv);if(id<=0)throw new Exception();pushIncome(id);dialog.dismiss();Toast.makeText(this,"Money received saved",Toast.LENGTH_SHORT).show();showPage(6);}catch(Exception e){amount.setError("Enter a valid amount");}}));dialog.show();
     }
-setError("Enter a valid amount");}}));dialog.show();
     }
     private void editIncome(long id,double value,String sourceValue,String dateValue,String noteValue){
         LinearLayout box=col();EditText amount=new EditText(this);amount.setInputType(8194);amount.setText(String.valueOf(value));box.addView(amount);EditText source=new EditText(this);source.setText(sourceValue);source.setHint("Received from");box.addView(source);
