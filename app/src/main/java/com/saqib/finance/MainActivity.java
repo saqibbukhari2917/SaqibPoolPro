@@ -518,6 +518,7 @@ public class MainActivity extends FragmentActivity {
     private void pickFilter(boolean start){String old=start?from:to;Calendar c=Calendar.getInstance();try{if(!old.isEmpty())c.setTime(iso.parse(old));}catch(Exception e){}new DatePickerDialog(this,(v,y,m,d)->{Calendar x=Calendar.getInstance();x.set(y,m,d);String value=iso.format(x.getTime());if(start)from=value;else to=value;if(!from.isEmpty()&&!to.isEmpty()&&from.compareTo(to)>0){if(start)to=from;else from=to;}showPage(2);},c.get(Calendar.YEAR),c.get(Calendar.MONTH),c.get(Calendar.DAY_OF_MONTH)).show();}
     private void refreshHistory(){
         if(historyList==null)return;historyList.removeAllViews();
+        // Local-only grouping for the trial; Firestore backup format stays unchanged.
         String groupExpr="CASE WHEN group_id IS NULL OR group_id='' THEN 'single-'||id ELSE group_id END";
         StringBuilder where=new StringBuilder(" WHERE 1=1");ArrayList<String> filters=new ArrayList<>();
         if(!from.isEmpty()){where.append(" AND date>=?");filters.add(from);}
