@@ -69,7 +69,7 @@ public class ReminderReceiver extends BroadcastReceiver {
         long id = intent.getLongExtra("reminder_id", 0);
         String item = intent.getStringExtra("reminder_item");
         if (item == null || item.trim().isEmpty()) item = "Your planned purchase";
-        android.content.SharedPreferences prefs = context.getSharedPreferences(context.getPackageName() + "_preferences", Context.MODE_PRIVATE);
+        android.content.SharedPreferences prefs = context.getSharedPreferences("MainActivity_preferences", Context.MODE_PRIVATE);
         boolean soundEnabled = prefs.getBoolean("reminder_sound_enabled", true);
         boolean vibrationEnabled = prefs.getBoolean("reminder_vibration_enabled", true);
         String activeChannelId = channelId(soundEnabled, vibrationEnabled);
@@ -97,6 +97,15 @@ public class ReminderReceiver extends BroadcastReceiver {
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .setPublicVersion(publicNotification)
                 .setAutoCancel(true).setContentIntent(content);
+
+        if (Build.VERSION.SDK_INT < 26) {
+            if (soundEnabled) {
+                Uri alarm = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+                if (alarm == null) alarm = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                if (alarm != null) builder.setSound(alarm);
+            }
+            if (vibrationEnabled) builder.setVibrate(new long[]{0, 500, 250, 500});
+        }
 
         NotificationManager nm = (NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT < 33 || context.checkSelfPermission("android.permission.POST_NOTIFICATIONS") == android.content.pm.PackageManager.PERMISSION_GRANTED) {
