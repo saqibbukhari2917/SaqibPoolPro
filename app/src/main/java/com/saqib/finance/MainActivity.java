@@ -44,7 +44,7 @@ public class MainActivity extends FragmentActivity {
     private int bg,surface,ink,muted,line; private boolean unlocked=false, lockPromptShowing=false, uiReady=false;
     @Override public void onCreate(Bundle b){super.onCreate(b);dark=getPreferences(0).getBoolean("dark",false);db=new DB(this);seedDefaultItems();refreshKnownItemIcons();setupGoogleSignIn();registerCloudNetworkCallback();applyCloudNetworkPreference();if(FirebaseAuth.getInstance().getCurrentUser()!=null)syncAllCloud();else if(getRetentionMonths()>0)cleanupOldRecords(false);palette();if(getPreferences(0).getBoolean("screen_lock",true)){showLockScreen();showSecurityPrompt();}else{unlocked=true;openMainUI(0);}}
     @Override protected void onResume(){super.onResume();if(getPreferences(0).getBoolean("screen_lock",true)&&!unlocked&&!lockPromptShowing){showLockScreen();showSecurityPrompt();}}
-    @Override protected void onStop(){super.onStop();if(!isChangingConfigurations()&&getPreferences(0).getBoolean("screen_lock",true)&&getPreferences(0).getBoolean("lock_on_recent_apps",false)){unlocked=false;showLockScreen();}}
+    @Override protected void onStop(){super.onStop();if(!isChangingConfigurations()&&getPreferences(0).getBoolean("screen_lock",true)&&getPreferences(0).getBoolean("lock_on_recent_apps",false)){unlocked=false;}}
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed(){
