@@ -496,34 +496,30 @@ public class MainActivity extends FragmentActivity {
         totalText.setText("Total: "+money(total)+"  ·  "+entries.size()+" item"+(entries.size()==1?"":"s"));
     }
     private void addPage(){
-        pageHeader("Add expense","Choose categories and add items to one purchase");
+        pageHeader("Add expense","Tap + on a category, then choose its item");
         LinearLayout c=content();LinearLayout form=card(c);
-        form.addView(txt("CHOOSE CATEGORY",11,GOLD,true));
-        form.addView(txt("Tap a category to see its saved items below.",12,muted,false));
+        form.addView(txt("CATEGORIES",11,GOLD,true));
+        form.addView(txt("Tap + to open items",12,muted,false));
         String[] categoryIcons={"🧒","💍","👨‍👩‍👧","🧴","💊","🛒","🏍️","🧾","🛍️","🍽️","📦"};
-        LinearLayout categoryStrip=row();categoryStrip.setGravity(Gravity.CENTER_VERTICAL);
-        HorizontalScrollView categoryScroll=new HorizontalScrollView(this);categoryScroll.setHorizontalScrollBarEnabled(false);categoryScroll.addView(categoryStrip);
-        LinearLayout.LayoutParams csp=lp(-1,88);csp.topMargin=dp(9);form.addView(categoryScroll,csp);
-        LinearLayout itemsPanel=col();itemsPanel.setPadding(dp(10),dp(10),dp(10),dp(10));itemsPanel.setBackground(shape(bg,14));
-        LinearLayout.LayoutParams ipp=lp(-1,-2);ipp.topMargin=dp(8);form.addView(itemsPanel,ipp);
+        LinearLayout categoryGrid=col();LinearLayout.LayoutParams gridLp=lp(-1,-2);gridLp.topMargin=dp(10);form.addView(categoryGrid,gridLp);
+        LinearLayout itemsPanel=col();itemsPanel.setPadding(dp(10),dp(10),dp(10),dp(10));itemsPanel.setBackground(shape(bg,14));itemsPanel.setVisibility(View.GONE);
+        LinearLayout.LayoutParams ipp=lp(-1,-2);ipp.topMargin=dp(10);form.addView(itemsPanel,ipp);
         LinearLayout entriesContainer=col();LinearLayout.LayoutParams entriesLp=lp(-1,-2);entriesLp.topMargin=dp(14);form.addView(entriesContainer,entriesLp);
         ArrayList<ExpenseEntryRow> entries=new ArrayList<>();
         TextView total=txt("Total: Rs. 0  ·  0 items",12,GREEN,true);total.setPadding(0,dp(8),0,dp(10));form.addView(total);
-        Runnable[] renderCategories=new Runnable[1];
-        renderCategories[0]=()->{
-            categoryStrip.removeAllViews();
-            for(int i=0;i<CATS.length;i++){
-                final String cat=CATS[i];final int index=i;boolean active=cat.equals(selectedAddCategory);
-                LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(9),dp(5),dp(9),dp(5));
-                tile.setBackground(shape(active?MINT:surface,13));
-                LinearLayout.LayoutParams tp=lp(76,76);tp.rightMargin=dp(7);categoryStrip.addView(tile,tp);
-                TextView ico=txt(categoryIcons[index],25,ink,true);ico.setGravity(Gravity.CENTER);tile.addView(ico,lp(-1,39));
-                TextView label=txt(cat,10,active?GREEN:ink,true);label.setGravity(Gravity.CENTER);label.setSingleLine(true);tile.addView(label);
-                tile.setOnClickListener(v->{selectedAddCategory=cat;renderCategories[0].run();renderExpenseCategoryItems(cat,itemsPanel,entries,entriesContainer,total);});
+        for(int base=0;base<CATS.length;base+=3){
+            LinearLayout gridRow=row();gridRow.setGravity(Gravity.CENTER_VERTICAL);LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(8);categoryGrid.addView(gridRow,rowLp);
+            for(int j=base;j<Math.min(base+3,CATS.length);j++){
+                final int index=j;final String cat=CATS[j];
+                LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(5),dp(7),dp(5),dp(7));tile.setBackground(shape(surface,13));
+                LinearLayout.LayoutParams tileLp=new LinearLayout.LayoutParams(0,dp(82),1);tileLp.leftMargin=dp(3);tileLp.rightMargin=dp(3);gridRow.addView(tile,tileLp);
+                TextView ico=txt(categoryIcons[index%categoryIcons.length],23,ink,true);ico.setGravity(Gravity.CENTER);tile.addView(ico,lp(-1,34));
+                TextView label=txt(cat,10,ink,true);label.setGravity(Gravity.CENTER);label.setSingleLine(true);label.setEllipsize(android.text.TextUtils.TruncateAt.END);tile.addView(label,lp(-1,20));
+                TextView plus=txt("+",19,GREEN,true);plus.setGravity(Gravity.CENTER);tile.addView(plus,lp(-1,20));
+                tile.setOnClickListener(v->{selectedAddCategory=cat;itemsPanel.setVisibility(View.VISIBLE);renderExpenseCategoryItems(cat,itemsPanel,entries,entriesContainer,total);});
             }
-        };
-        renderCategories[0].run();
-        renderExpenseCategoryItems(selectedAddCategory,itemsPanel,entries,entriesContainer,total);
+            while(gridRow.getChildCount()<3){View spacer=new View(this);gridRow.addView(spacer,new LinearLayout.LayoutParams(0,dp(82),1));}
+        }
         TextView dateTitle=txt("PURCHASE DATE",11,muted,true);dateTitle.setPadding(0,dp(17),0,dp(4));form.addView(dateTitle);
         TextView date=txt(display.format(new Date()),14,ink,true);date.setPadding(dp(13),dp(14),dp(13),dp(14));date.setBackground(shape(bg,10));form.addView(date,lp(-1,48));date.setOnClickListener(v->pickDate(date));
         Button save=primaryButton("Save expense");LinearLayout.LayoutParams saveLp=lp(-1,50);saveLp.topMargin=dp(18);form.addView(save,saveLp);
@@ -552,20 +548,22 @@ public class MainActivity extends FragmentActivity {
     }
     private void renderExpenseCategoryItems(String categoryName,LinearLayout panel,ArrayList<ExpenseEntryRow> entries,LinearLayout entriesContainer,TextView total){
         panel.removeAllViews();panel.addView(txt(categoryName+" ITEMS",11,GREEN,true));
+        LinearLayout itemGrid=col();LinearLayout.LayoutParams igp=lp(-1,-2);igp.topMargin=dp(8);panel.addView(itemGrid,igp);
         Cursor q=db.getReadableDatabase().rawQuery("SELECT name,icon FROM category_items WHERE category=? ORDER BY name COLLATE NOCASE",new String[]{categoryName});
-        boolean any=false;
-        while(q.moveToNext()){
-            any=true;String itemName=q.getString(0),icon=q.getString(1);
-            LinearLayout itemRow=row();itemRow.setPadding(dp(5),dp(5),dp(5),dp(5));
-            TextView symbol=txt(icon==null||icon.trim().isEmpty()?"📦":icon,23,ink,true);symbol.setGravity(Gravity.CENTER);itemRow.addView(symbol,lp(42,42));
-            itemRow.addView(txt(itemName,13,ink,true),new LinearLayout.LayoutParams(0,-2,1));
-            itemRow.addView(txt("+",21,GREEN,true));
-            panel.addView(itemRow,lp(-1,48));
-            View divider=new View(this);divider.setBackgroundColor(line);panel.addView(divider,lp(-1,1));
-            itemRow.setOnClickListener(v->showQuickExpenseAmountDialog(categoryName,itemName,entries,entriesContainer,total));
+        ArrayList<String[]> savedItems=new ArrayList<>();while(q.moveToNext())savedItems.add(new String[]{q.getString(0),q.getString(1)});q.close();
+        if(savedItems.isEmpty())panel.addView(txt("No saved items yet. Add a new item below.",12,muted,false));
+        for(int base=0;base<savedItems.size();base+=3){
+            LinearLayout itemRow=row();LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(7);itemGrid.addView(itemRow,rowLp);
+            for(int j=base;j<Math.min(base+3,savedItems.size());j++){
+                String itemName=savedItems.get(j)[0],icon=savedItems.get(j)[1];
+                LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(4),dp(7),dp(4),dp(7));tile.setBackground(shape(surface,12));
+                LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,dp(82),1);tp.leftMargin=dp(3);tp.rightMargin=dp(3);itemRow.addView(tile,tp);
+                TextView symbol=txt(icon==null||icon.trim().isEmpty()?"📦":icon,23,ink,true);symbol.setGravity(Gravity.CENTER);tile.addView(symbol,lp(-1,36));
+                TextView label=txt(itemName,10,ink,true);label.setGravity(Gravity.CENTER);label.setMaxLines(2);label.setEllipsize(android.text.TextUtils.TruncateAt.END);tile.addView(label,lp(-1,34));
+                tile.setOnClickListener(v->showQuickExpenseAmountDialog(categoryName,itemName,entries,entriesContainer,total));
+            }
+            while(itemRow.getChildCount()<3){View spacer=new View(this);itemRow.addView(spacer,new LinearLayout.LayoutParams(0,dp(82),1));}
         }
-        q.close();
-        if(!any)panel.addView(txt("No saved items yet. Add a new item below.",12,muted,false));
         Button create=smallFilter("+  New item in "+categoryName);LinearLayout.LayoutParams createLp=lp(-1,42);createLp.topMargin=dp(8);panel.addView(create,createLp);
         create.setOnClickListener(v->{
             EditText name=new EditText(this);name.setSingleLine(true);name.setHint("Enter new item name");
