@@ -382,6 +382,7 @@ public class MainActivity extends FragmentActivity {
             boolean exists=duplicate.moveToFirst();duplicate.close();if(exists){Toast.makeText(this,"This item already exists in this category",Toast.LENGTH_LONG).show();return;}
             SQLiteDatabase sql=db.getWritableDatabase();ContentValues item=new ContentValues();item.put("name",next);int changed=sql.update("category_items",item,"id=?",new String[]{String.valueOf(id)});
             if(changed>0){
+                ContentValues draftRename=new ContentValues();draftRename.put("item",next);sql.update("expense_drafts",draftRename,"category=? AND item=?",new String[]{cat,oldName});
                 deleteCloudCategoryItem(cat,oldName);pushCategoryItem(id);
                 Cursor legacy=sql.rawQuery("SELECT id,description FROM expenses WHERE category=? AND (item=? OR (item IS NULL AND description=?))",new String[]{cat,oldName,oldName});
                 ArrayList<Long> ids=new ArrayList<>();while(legacy.moveToNext())ids.add(legacy.getLong(0));legacy.close();
@@ -404,7 +405,7 @@ public class MainActivity extends FragmentActivity {
         }).show();
     }
     private void deleteCategoryItemSafely(long id,String name,String cat){
-        Cursor c=db.getReadableDatabase().rawQuery("SELECT COUNT(*) FROM expenses WHERE category=? AND item=?",new String[]{cat,name});
+        Cursor c=db.getReadableDatabase().rawQuery("SELECT COUNT(*) FROM expenses WHERE category=? AND (item=? OR (item IS NULL AND description=?))",new String[]{cat,name,name});
         int count=0;if(c.moveToFirst())count=c.getInt(0);c.close();
         if(count>0){new AlertDialog.Builder(this).setTitle("Item cannot be deleted").setMessage("This item is linked to "+count+" expense record(s). Replace the item in Expense History first. Your records will not be deleted.").setPositiveButton("OK",null).show();return;}
         new AlertDialog.Builder(this).setMessage("Delete "+name+"?").setNegativeButton("Cancel",null).setPositiveButton("Delete",(d,w)->{
