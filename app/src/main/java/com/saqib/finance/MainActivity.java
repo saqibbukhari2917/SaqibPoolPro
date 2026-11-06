@@ -911,7 +911,12 @@ public class MainActivity extends FragmentActivity {
         LinearLayout itemGrid=col();itemScreen.addView(itemGrid,lp(-1,-2));
         final LinearLayout[] currentItemRow={null};
         TextView selectedItem=txt("Select An Item",13,muted,true);selectedItem.setPadding(dp(4),dp(12),dp(4),dp(8));itemScreen.addView(selectedItem);
-        Button doneButton=primaryButton("Done");doneButton.setEnabled(false);itemScreen.addView(doneButton,lp(-1,46));
+        EditText price=new EditText(this);price.setSingleLine(true);price.setInputType(8194);price.setHint("Estimated Price (PKR)");itemScreen.addView(price,lp(-1,50));
+        TextView date=txt(display.format(when.getTime()),14,ink,true);date.setPadding(dp(12),dp(12),dp(12),dp(12));date.setBackground(shape(bg,10));LinearLayout.LayoutParams dateLp=lp(-1,46);dateLp.topMargin=dp(8);itemScreen.addView(date,dateLp);
+        date.setOnClickListener(v->{Calendar x=(Calendar)when.clone();new DatePickerDialog(this,(p,y,mo,d)->{when.set(y,mo,d);date.setText(display.format(when.getTime()));},x.get(Calendar.YEAR),x.get(Calendar.MONTH),x.get(Calendar.DAY_OF_MONTH)).show();});
+        TextView clock=txt(new SimpleDateFormat("hh:mm a",Locale.ENGLISH).format(when.getTime()),14,ink,true);clock.setPadding(dp(12),dp(12),dp(12),dp(12));clock.setBackground(shape(bg,10));LinearLayout.LayoutParams clockLp=lp(-1,46);clockLp.topMargin=dp(7);itemScreen.addView(clock,clockLp);
+        clock.setOnClickListener(v->new TimePickerDialog(this,(p,h,min)->{when.set(Calendar.HOUR_OF_DAY,h);when.set(Calendar.MINUTE,min);when.set(Calendar.SECOND,0);clock.setText(new SimpleDateFormat("hh:mm a",Locale.ENGLISH).format(when.getTime()));},when.get(Calendar.HOUR_OF_DAY),when.get(Calendar.MINUTE),false).show());
+        Button doneButton=primaryButton("Done");doneButton.setEnabled(false);LinearLayout.LayoutParams doneLp=lp(-1,48);doneLp.topMargin=dp(12);itemScreen.addView(doneButton,doneLp);
 
         LinearLayout categoryGrid=col();
         String[] categoryIcons={"🧒","💍","👨‍👩‍👧","🧴","💊","🛒","🏍️","🧾","🛍️","🍽️","📦"};
@@ -953,17 +958,7 @@ public class MainActivity extends FragmentActivity {
         categoryScreen.addView(categoryGrid,lp(-1,-2));
         itemBack.setOnClickListener(v->{itemScreen.setVisibility(View.GONE);categoryScreen.setVisibility(View.VISIBLE);});
 
-        LinearLayout formScreen=col();formScreen.setVisibility(View.GONE);c.addView(formScreen,lp(-1,-2));
-        TextView formBack=txt("‹  Items",14,GREEN,true);formBack.setPadding(0,dp(4),0,dp(10));formScreen.addView(formBack);formBack.setOnClickListener(v->{formScreen.setVisibility(View.GONE);itemScreen.setVisibility(View.VISIBLE);});
-        TextView formTitle=txt("Reminder Details",17,ink,true);formScreen.addView(formTitle);
-        EditText price=new EditText(this);price.setSingleLine(true);price.setInputType(8194);price.setHint("Amount (PKR)");formScreen.addView(price,lp(-1,50));
-        TextView date=txt(display.format(when.getTime()),14,ink,true);date.setPadding(dp(12),dp(12),dp(12),dp(12));date.setBackground(shape(bg,10));LinearLayout.LayoutParams dateLp=lp(-1,46);dateLp.topMargin=dp(8);formScreen.addView(date,dateLp);
-        date.setOnClickListener(v->{Calendar x=(Calendar)when.clone();new DatePickerDialog(this,(p,y,mo,d)->{when.set(y,mo,d);date.setText(display.format(when.getTime()));},x.get(Calendar.YEAR),x.get(Calendar.MONTH),x.get(Calendar.DAY_OF_MONTH)).show();});
-        TextView clock=txt(new SimpleDateFormat("hh:mm a",Locale.ENGLISH).format(when.getTime()),14,ink,true);clock.setPadding(dp(12),dp(12),dp(12),dp(12));clock.setBackground(shape(bg,10));LinearLayout.LayoutParams clockLp=lp(-1,46);clockLp.topMargin=dp(7);formScreen.addView(clock,clockLp);
-        clock.setOnClickListener(v->new TimePickerDialog(this,(p,h,min)->{when.set(Calendar.HOUR_OF_DAY,h);when.set(Calendar.MINUTE,min);when.set(Calendar.SECOND,0);clock.setText(new SimpleDateFormat("hh:mm a",Locale.ENGLISH).format(when.getTime()));},when.get(Calendar.HOUR_OF_DAY),when.get(Calendar.MINUTE),false).show());
-        Button save=primaryButton("Add");LinearLayout.LayoutParams saveLp=lp(-1,48);saveLp.topMargin=dp(12);formScreen.addView(save,saveLp);
-        doneButton.setOnClickListener(v->{if(chosen[1].isEmpty())return;formTitle.setText(chosen[1]);itemScreen.setVisibility(View.GONE);formScreen.setVisibility(View.VISIBLE);});
-        save.setOnClickListener(v->{
+        doneButton.setOnClickListener(v->{
             if(chosen[1].isEmpty()){Toast.makeText(this,"Select an item first",Toast.LENGTH_SHORT).show();return;}
             if(when.getTimeInMillis()<=System.currentTimeMillis()){Toast.makeText(this,"Choose a future date and time",Toast.LENGTH_SHORT).show();return;}
             double estimate=0;String raw=price.getText().toString().trim();
