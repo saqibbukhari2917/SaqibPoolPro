@@ -41,7 +41,7 @@ public class MainActivity extends FragmentActivity {
     private final SimpleDateFormat display=new SimpleDateFormat("dd MMM yyyy",Locale.ENGLISH);
     private final SimpleDateFormat monthFmt=new SimpleDateFormat("MMMM yyyy",Locale.ENGLISH);
     private int bg,surface,ink,muted,line; private boolean unlocked=false, lockPromptShowing=false, uiReady=false;
-    @Override public void onCreate(Bundle b){super.onCreate(b);dark=getPreferences(0).getBoolean("dark",false);db=new DB(this);seedDefaultItems();refreshKnownItemIcons();setupGoogleSignIn();registerCloudNetworkCallback();applyCloudNetworkPreference();if(FirebaseAuth.getInstance().getCurrentUser()!=null)syncAllCloud();palette();if(getPreferences(0).getBoolean("screen_lock",true)){showLockScreen();showSecurityPrompt();}else{unlocked=true;openMainUI(0);}}
+    @Override public void onCreate(Bundle b){super.onCreate(b);dark=getPreferences(0).getBoolean("dark",false);db=new DB(this);seedDefaultItems();refreshKnownItemIcons();setupGoogleSignIn();registerCloudNetworkCallback();applyCloudNetworkPreference();if(FirebaseAuth.getInstance().getCurrentUser()!=null)syncAllCloud();else if(getPreferences(0).getBoolean("auto_delete_3_months",false))cleanupOldRecords(false);palette();if(getPreferences(0).getBoolean("screen_lock",true)){showLockScreen();showSecurityPrompt();}else{unlocked=true;openMainUI(0);}}
     @Override protected void onResume(){super.onResume();if(getPreferences(0).getBoolean("screen_lock",true)&&!unlocked&&!lockPromptShowing){showLockScreen();showSecurityPrompt();}}
     @Override protected void onStop(){super.onStop();if(!isChangingConfigurations()&&getPreferences(0).getBoolean("screen_lock",true)&&getPreferences(0).getBoolean("lock_on_recent_apps",false)){unlocked=false;showLockScreen();}}
     @Override
@@ -390,6 +390,29 @@ public class MainActivity extends FragmentActivity {
         Spinner network=new Spinner(this);String[] networkOptions={"Wi-Fi + Mobile Data","Wi-Fi only","Off"};network.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,networkOptions));
         String saved=getPreferences(0).getString(PREF_CLOUD_NETWORK,"Wi-Fi + Mobile Data");network.setSelection(Math.max(0,Arrays.asList(networkOptions).indexOf(saved)));cloud.addView(network,lp(-1,48));
         network.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){boolean first=true;public void onNothingSelected(AdapterView<?> x){}public void onItemSelected(AdapterView<?> x,View v,int p,long id){if(first){first=false;return;}getPreferences(0).edit().putString(PREF_CLOUD_NETWORK,networkOptions[p]).apply();applyCloudNetworkPreference();}});
+        LinearLayout retention=card(c);
+        retention.addView(txt("DATA & RECORD HISTORY",10,GOLD,true));
+        retention.addView(txt("Keep your records under control",17,ink,true));
+        retention.addView(txt("By default, all records stay saved. Turn this on to automatically remove expense records older than 3 months. Completed reminders older than 3 months will also be removed; upcoming reminders and your saved item categories stay safe.",12,muted,false));
+        Switch autoDelete=new Switch(this);autoDelete.setText("Auto-delete records older than 3 months");autoDelete.setTextColor(ink);autoDelete.setChecked(getPreferences(0).getBoolean("auto_delete_3_months",false));autoDelete.setPadding(0,dp(12),0,dp(6));retention.addView(autoDelete);
+        autoDelete.setOnCheckedChangeListener((button,on)->{
+            if(on){
+                new AlertDialog.Builder(this).setTitle("Turn on automatic deletion?")
+                    .setMessage("Expense records and completed reminders older than 3 months will be deleted automatically. Upcoming reminders and saved item categories will remain. This cannot be undone.")
+                    .setNegativeButton("Cancel",(d,w)->autoDelete.setChecked(false))
+                    .setPositiveButton("Turn on",(d,w)->{getPreferences(0).edit().putBoolean("auto_delete_3_months",true).apply();cleanupOldRecords(true);})
+                    .setOnCancelListener(d->autoDelete.setChecked(false)).show();
+            }else getPreferences(0).edit().putBoolean("auto_delete_3_months",false).apply();
+        });
+        Button deleteOld=smallFilter("Delete records older than 3 months now");retention.addView(deleteOld,lp(-1,44));
+        deleteOld.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Delete old records?")
+            .setMessage("This will permanently delete expense records and completed reminders older than 3 months from this phone and your connected cloud backup.")
+            .setNegativeButton("Cancel",null).setPositiveButton("Delete old records",(d,w)->cleanupOldRecords(true)).show());
+        Button deleteAll=smallFilter("Delete all expense history");retention.addView(deleteAll,lp(-1,44));
+        deleteAll.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Delete all expense history?")
+            .setMessage("Every expense record on this phone and in your connected cloud backup will be permanently deleted. Reminders and saved item categories will not be deleted.")
+            .setNegativeButton("Cancel",null).setPositiveButton("Delete all",(d,w)->deleteAllExpenseHistory()).show());
+
         LinearLayout about=card(c);about.addView(txt("ABOUT",10,GOLD,true));about.addView(txt("Saqib Finance",18,ink,true));about.addView(txt("Family expense tracker · Offline storage · PKR",13,muted,false));about.addView(txt("Your records stay on this phone and sync to your Google account when connected. Sign in on a new phone to restore them.",12,muted,false));
     }
     private void setupGoogleSignIn(){GoogleSignInOptions o=new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).requestIdToken(getString(R.string.default_web_client_id)).requestEmail().build();googleSignInClient=GoogleSignIn.getClient(this,o);}
@@ -400,7 +423,41 @@ public class MainActivity extends FragmentActivity {
     @Override protected void onDestroy(){super.onDestroy();try{if(cloudNetworkCallback!=null)((ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE)).unregisterNetworkCallback(cloudNetworkCallback);}catch(Exception ignored){}}
     private String cloudUid(){return FirebaseAuth.getInstance().getCurrentUser().getUid();}
     private CollectionReference cloudCollection(String name){return FirebaseFirestore.getInstance().collection("users").document(cloudUid()).collection(name);}
-    private void syncAllCloud(){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;applyCloudNetworkPreference();cloudCollection("expenses").get().addOnSuccessListener(es->{SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();try{for(DocumentSnapshot d:es.getDocuments()){long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");Cursor c=sql.rawQuery("SELECT id FROM expenses WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("category",d.getString("category"));v.put("description",d.getString("description")==null?"":d.getString("description"));v.put("amount",d.getDouble("amount")==null?0:d.getDouble("amount"));v.put("date",d.getString("date"));sql.insert("expenses",null,v);}}sql.setTransactionSuccessful();}finally{sql.endTransaction();}cloudCollection("reminders").get().addOnSuccessListener(rs->{SQLiteDatabase rdb=db.getWritableDatabase();rdb.beginTransaction();try{for(DocumentSnapshot d:rs.getDocuments()){long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");Cursor c=rdb.rawQuery("SELECT id FROM reminders WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("item",d.getString("item"));v.put("trigger_at",d.getLong("trigger_at")==null?0:d.getLong("trigger_at"));v.put("done",d.getLong("done")==null?0:d.getLong("done"));v.put("estimated_amount",d.getDouble("estimated_amount")==null?0:d.getDouble("estimated_amount"));if(d.get("expense_id")==null)v.putNull("expense_id");else v.put("expense_id",((Number)d.get("expense_id")).longValue());rdb.insert("reminders",null,v);}}rdb.setTransactionSuccessful();}finally{rdb.endTransaction();}uploadAllLocal();updateAdminStats();reschedulePendingReminders();if(uiReady)showPage(page);}).addOnFailureListener(e->Toast.makeText(this,"Cloud restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show());}).addOnFailureListener(e->Toast.makeText(this,"Cloud restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show());}
+    private void syncAllCloud(){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;applyCloudNetworkPreference();cloudCollection("expenses").get().addOnSuccessListener(es->{SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();try{for(DocumentSnapshot d:es.getDocuments()){long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");Cursor c=sql.rawQuery("SELECT id FROM expenses WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("category",d.getString("category"));v.put("description",d.getString("description")==null?"":d.getString("description"));v.put("amount",d.getDouble("amount")==null?0:d.getDouble("amount"));v.put("date",d.getString("date"));sql.insert("expenses",null,v);}}sql.setTransactionSuccessful();}finally{sql.endTransaction();}cloudCollection("reminders").get().addOnSuccessListener(rs->{SQLiteDatabase rdb=db.getWritableDatabase();rdb.beginTransaction();try{for(DocumentSnapshot d:rs.getDocuments()){long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");Cursor c=rdb.rawQuery("SELECT id FROM reminders WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("item",d.getString("item"));v.put("trigger_at",d.getLong("trigger_at")==null?0:d.getLong("trigger_at"));v.put("done",d.getLong("done")==null?0:d.getLong("done"));v.put("estimated_amount",d.getDouble("estimated_amount")==null?0:d.getDouble("estimated_amount"));if(d.get("expense_id")==null)v.putNull("expense_id");else v.put("expense_id",((Number)d.get("expense_id")).longValue());rdb.insert("reminders",null,v);}}rdb.setTransactionSuccessful();}finally{rdb.endTransaction();}if(getPreferences(0).getBoolean("auto_delete_3_months",false))cleanupOldRecords(false);uploadAllLocal();updateAdminStats();reschedulePendingReminders();if(uiReady)showPage(page);}).addOnFailureListener(e->Toast.makeText(this,"Cloud restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show());}).addOnFailureListener(e->Toast.makeText(this,"Cloud restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show());}
+    private String threeMonthCutoff(){
+        Calendar cutoff=Calendar.getInstance();cutoff.add(Calendar.MONTH,-3);return iso.format(cutoff.getTime());
+    }
+    private void cleanupOldRecords(boolean notify){
+        String cutoff=threeMonthCutoff();
+        ArrayList<Long> expenseIds=new ArrayList<>();
+        Cursor e=db.getReadableDatabase().rawQuery("SELECT id FROM expenses WHERE date<?",new String[]{cutoff});
+        while(e.moveToNext())expenseIds.add(e.getLong(0));e.close();
+        ArrayList<Long> reminderIds=new ArrayList<>();
+        long cutoffMillis;
+        try{cutoffMillis=iso.parse(cutoff).getTime();}catch(Exception ex){cutoffMillis=System.currentTimeMillis()-90L*24*60*60*1000;}
+        Cursor r=db.getReadableDatabase().rawQuery("SELECT id FROM reminders WHERE done=1 AND trigger_at<?",new String[]{String.valueOf(cutoffMillis)});
+        while(r.moveToNext())reminderIds.add(r.getLong(0));r.close();
+        SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();
+        try{
+            for(long id:expenseIds)sql.delete("expenses","id=?",new String[]{String.valueOf(id)});
+            for(long id:reminderIds)sql.delete("reminders","id=?",new String[]{String.valueOf(id)});
+            sql.setTransactionSuccessful();
+        }finally{sql.endTransaction();}
+        for(long id:expenseIds)deleteCloudRecord("expenses",id);
+        for(long id:reminderIds)deleteCloudRecord("reminders",id);
+        if(notify)Toast.makeText(this,"Deleted "+expenseIds.size()+" old expenses and "+reminderIds.size()+" completed reminders",Toast.LENGTH_LONG).show();
+        updateAdminStats();
+        if(uiReady&&page==2)showPage(2);
+    }
+    private void deleteAllExpenseHistory(){
+        ArrayList<Long> ids=new ArrayList<>();Cursor c=db.getReadableDatabase().rawQuery("SELECT id FROM expenses",null);
+        while(c.moveToNext())ids.add(c.getLong(0));c.close();
+        db.getWritableDatabase().delete("expenses",null,null);
+        for(long id:ids)deleteCloudRecord("expenses",id);
+        updateAdminStats();
+        Toast.makeText(this,"All expense history deleted ("+ids.size()+" records)",Toast.LENGTH_LONG).show();
+        if(uiReady)showPage(2);
+    }
     private void reschedulePendingReminders(){Cursor c=db.getReadableDatabase().rawQuery("SELECT id,item,trigger_at FROM reminders WHERE done=0 AND trigger_at>?",new String[]{String.valueOf(System.currentTimeMillis())});while(c.moveToNext())ReminderReceiver.schedule(this,c.getLong(0),c.getString(1),c.getLong(2));c.close();}
     private void uploadAllLocal(){
         Cursor e=db.getReadableDatabase().rawQuery("SELECT id,category,description,amount,date FROM expenses",null);
