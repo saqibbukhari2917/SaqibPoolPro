@@ -611,6 +611,7 @@ public class MainActivity extends FragmentActivity {
             updateExpenseEntrySummary(entry,entries,entriesContainer,total);
             entry.summary.setOnClickListener(x->showExpenseItemEditor(entries,entriesContainer,total,entry,entry.category,entry.item));
             refreshExpenseEntryTotal(entries,total);dialog.dismiss();
+            });
         });
         dialog.show();
         if(dialog.getWindow()!=null){int width=Math.min(getResources().getDisplayMetrics().widthPixels-dp(36),dp(420));dialog.getWindow().setLayout(width,-2);}
