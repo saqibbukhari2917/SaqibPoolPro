@@ -102,7 +102,7 @@ public class MainActivity extends FragmentActivity {
         String[] labels={"Home","Add","History","Settings","Reminders"};String[] icons={"⌂","+","▤","⚙","◷"};
         for(int i=0;i<5;i++){final int index=i;LinearLayout item=col();item.setGravity(Gravity.CENTER);boolean active=(i==p)||(p==5&&i==1)||(p>=7&&i==4);TextView ic=txt(icons[i],22,active?GOLD:0xFFDCE8FA,true);ic.setGravity(Gravity.CENTER);TextView label=txt(labels[i],10,active?Color.WHITE:0xFFB8CBE8,active);label.setGravity(Gravity.CENTER);item.addView(ic);item.addView(label);item.setOnClickListener(v->{if(index!=4)reminderFlow=false;showPage(index);});nav.addView(item,new LinearLayout.LayoutParams(0,-1,1));}
     }
-    private void pageHeader(String title,String sub){LinearLayout h=col();h.setPadding(dp(16),dp(14),dp(16),dp(18));GradientDrawable gd=new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xFF4B83D8,0xFF3D74CC,0xFF315FA8});gd.setCornerRadii(new float[]{0,0,0,0,dp(24),dp(24),dp(24),dp(24)});h.setBackground(gd);LinearLayout brand=row();ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.ic_launcher);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);logo.setContentDescription("Saqib Finance app icon");brand.addView(logo,lp(78,78));LinearLayout names=col();names.setGravity(Gravity.CENTER_VERTICAL);names.setPadding(dp(10),0,0,0);TextView brandName=txt("Saqib Finance",27,Color.WHITE,true);brandName.setSingleLine(true);brandName.setIncludeFontPadding(false);names.addView(brandName);TextView brandTagline=txt("Track · Manage · Save",12,0xFFDCE9FF,true);brandTagline.setPadding(0,dp(5),0,0);names.addView(brandTagline);brand.addView(names,new LinearLayout.LayoutParams(0,-2,1));TextView gear=txt("⚙",28,Color.WHITE,true);gear.setGravity(Gravity.CENTER);gear.setOnClickListener(v->showPage(3));brand.addView(gear,lp(42,52));if(!title.equals("Home")){TextView titleView=txt(title,19,Color.WHITE,true);titleView.setPadding(0,dp(12),0,dp(2));h.addView(titleView);h.addView(txt(sub,11,0xFFDCE9FF,false));}body.addView(h);}
+    private void pageHeader(String title,String sub){LinearLayout h=col();h.setPadding(dp(16),dp(12),dp(16),dp(13));GradientDrawable gd=new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xFF78A5E8,0xFF6997E2,0xFF5C89D4});gd.setCornerRadii(new float[]{0,0,0,0,dp(24),dp(24),dp(24),dp(24)});h.setBackground(gd);LinearLayout brand=row();ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.ic_launcher);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);logo.setContentDescription("Saqib Finance app icon");brand.addView(logo,lp(72,72));LinearLayout names=col();names.setGravity(Gravity.CENTER_VERTICAL);names.setPadding(dp(10),0,0,0);TextView brandName=txt("Saqib Finance",27,Color.WHITE,true);brandName.setSingleLine(true);brandName.setIncludeFontPadding(false);names.addView(brandName);TextView brandTagline=txt("Track · Manage · Save",12,0xFFDCE9FF,true);brandTagline.setPadding(0,dp(5),0,0);names.addView(brandTagline);brand.addView(names,new LinearLayout.LayoutParams(0,-2,1));TextView gear=txt("⚙",28,Color.WHITE,true);gear.setGravity(Gravity.CENTER);gear.setOnClickListener(v->showPage(3));brand.addView(gear,lp(42,52));if(!title.equals("Home")){TextView titleView=txt(title,19,Color.WHITE,true);titleView.setPadding(0,dp(12),0,dp(2));h.addView(titleView);h.addView(txt(sub,11,0xFFDCE9FF,false));}body.addView(h);}
     private LinearLayout content(){LinearLayout c=col();c.setPadding(dp(17),dp(17),dp(17),0);body.addView(c);return c;}
     private LinearLayout card(LinearLayout parent){LinearLayout c=col();c.setPadding(dp(16),dp(15),dp(16),dp(15));c.setBackground(shape(surface,18));c.setElevation(dp(2));LinearLayout.LayoutParams q=lp(-1,-2);q.bottomMargin=dp(13);parent.addView(c,q);return c;}
     private void homePage(){
@@ -499,38 +499,38 @@ public class MainActivity extends FragmentActivity {
     }
     private void addPage(){
         pageHeader("Add expense","Choose categories and add their items");
-        LinearLayout c=content();LinearLayout form=card(c);
-        TextView categoryTitle=txt("CATEGORIES",11,GOLD,true);form.addView(categoryTitle);
+        LinearLayout c=content();c.setPadding(dp(12),dp(9),dp(12),0);LinearLayout form=card(c);form.setPadding(dp(11),dp(10),dp(11),dp(10));
+        TextView categoryTitle=txt("CATEGORIES",11,GOLD,true);categoryTitle.setPadding(dp(2),0,0,dp(2));form.addView(categoryTitle);
         final String autoCategory=selectedAddCategory;
         final String autoItemName=pendingItemName;
         final boolean openSelectedItem=autoItemName!=null&&!autoItemName.trim().isEmpty()&&autoCategory!=null&&!autoCategory.trim().isEmpty();
         pendingItemName="";
         String[] categoryIcons={"🧒","💍","👨‍👩‍👧","🧴","💊","🛒","🏍️","🧾","🛍️","🍽️","📦"};
-        LinearLayout categoryGrid=col();LinearLayout.LayoutParams gridLp=lp(-1,-2);gridLp.topMargin=dp(10);form.addView(categoryGrid,gridLp);
-        LinearLayout itemsPanel=col();itemsPanel.setPadding(dp(10),dp(10),dp(10),dp(10));itemsPanel.setBackground(shape(bg,14));itemsPanel.setVisibility(View.GONE);
-        LinearLayout.LayoutParams ipp=lp(-1,-2);ipp.topMargin=dp(10);form.addView(itemsPanel,ipp);
-        LinearLayout entriesContainer=col();LinearLayout.LayoutParams entriesLp=lp(-1,-2);entriesLp.topMargin=dp(14);form.addView(entriesContainer,entriesLp);
+        LinearLayout categoryGrid=col();LinearLayout.LayoutParams gridLp=lp(-1,-2);gridLp.topMargin=dp(5);form.addView(categoryGrid,gridLp);
+        LinearLayout itemsPanel=col();itemsPanel.setPadding(dp(7),dp(7),dp(7),dp(7));itemsPanel.setBackground(shape(bg,14));itemsPanel.setVisibility(View.GONE);
+        LinearLayout.LayoutParams ipp=lp(-1,-2);ipp.topMargin=dp(5);form.addView(itemsPanel,ipp);
+        LinearLayout entriesContainer=col();LinearLayout.LayoutParams entriesLp=lp(-1,-2);entriesLp.topMargin=dp(9);form.addView(entriesContainer,entriesLp);
         ArrayList<ExpenseEntryRow> entries=new ArrayList<>();
         TextView total=txt("Total: Rs. 0  ·  0 items",12,GREEN,true);total.setPadding(0,dp(8),0,dp(10));form.addView(total);
         for(int base=0;base<CATS.length;base+=3){
-            LinearLayout gridRow=row();gridRow.setGravity(Gravity.CENTER_VERTICAL);LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(8);categoryGrid.addView(gridRow,rowLp);
+            LinearLayout gridRow=row();gridRow.setGravity(Gravity.CENTER_VERTICAL);LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(5);categoryGrid.addView(gridRow,rowLp);
             for(int j=base;j<Math.min(base+3,CATS.length);j++){
                 final int index=j;final String cat=CATS[j];
-                LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(5),dp(7),dp(5),dp(7));tile.setBackground(shape(surface,13));
-                LinearLayout.LayoutParams tileLp=new LinearLayout.LayoutParams(0,dp(82),1);tileLp.leftMargin=dp(3);tileLp.rightMargin=dp(3);gridRow.addView(tile,tileLp);
-                TextView ico=txt(categoryIcons[index%categoryIcons.length],23,ink,true);ico.setGravity(Gravity.CENTER);tile.addView(ico,lp(-1,34));
-                TextView label=txt(cat,10,ink,true);label.setGravity(Gravity.CENTER);label.setSingleLine(true);label.setEllipsize(android.text.TextUtils.TruncateAt.END);tile.addView(label,lp(-1,20));
+                LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(4),dp(4),dp(4),dp(4));tile.setBackground(shape(surface,13));
+                LinearLayout.LayoutParams tileLp=new LinearLayout.LayoutParams(0,dp(70),1);tileLp.leftMargin=dp(3);tileLp.rightMargin=dp(3);gridRow.addView(tile,tileLp);
+                TextView ico=txt(categoryIcons[index%categoryIcons.length],23,ink,true);ico.setGravity(Gravity.CENTER);tile.addView(ico,lp(-1,31));
+                TextView label=txt(cat,10,ink,true);label.setGravity(Gravity.CENTER);label.setSingleLine(true);label.setEllipsize(android.text.TextUtils.TruncateAt.END);tile.addView(label,lp(-1,18));
                 tile.setOnClickListener(v->{selectedAddCategory=cat;categoryTitle.setVisibility(View.GONE);categoryGrid.setVisibility(View.GONE);itemsPanel.setVisibility(View.VISIBLE);renderExpenseCategoryItems(cat,itemsPanel,entries,entriesContainer,total,categoryGrid,categoryTitle);});
             }
-            while(gridRow.getChildCount()<3){View spacer=new View(this);gridRow.addView(spacer,new LinearLayout.LayoutParams(0,dp(82),1));}
+            while(gridRow.getChildCount()<3){View spacer=new View(this);gridRow.addView(spacer,new LinearLayout.LayoutParams(0,dp(70),1));}
         }
         if(openSelectedItem){
             categoryTitle.setVisibility(View.GONE);categoryGrid.setVisibility(View.GONE);itemsPanel.setVisibility(View.VISIBLE);
             renderExpenseCategoryItems(autoCategory,itemsPanel,entries,entriesContainer,total,categoryGrid,categoryTitle);
         }
-        TextView dateTitle=txt("PURCHASE DATE",11,muted,true);dateTitle.setPadding(0,dp(17),0,dp(4));form.addView(dateTitle);
+        TextView dateTitle=txt("PURCHASE DATE",11,muted,true);dateTitle.setPadding(0,dp(12),0,dp(3));form.addView(dateTitle);
         TextView date=txt(display.format(new Date()),14,ink,true);date.setPadding(dp(13),dp(14),dp(13),dp(14));date.setBackground(shape(bg,10));form.addView(date,lp(-1,48));date.setOnClickListener(v->pickDate(date));
-        Button save=primaryButton("Save expense");LinearLayout.LayoutParams saveLp=lp(-1,50);saveLp.topMargin=dp(18);form.addView(save,saveLp);
+        Button save=primaryButton("Save expense");LinearLayout.LayoutParams saveLp=lp(-1,50);saveLp.topMargin=dp(12);form.addView(save,saveLp);
         save.setOnClickListener(v->{
             if(entries.isEmpty()){Toast.makeText(this,"Add at least one item first",Toast.LENGTH_SHORT).show();return;}
             try{
@@ -557,23 +557,23 @@ public class MainActivity extends FragmentActivity {
     }
     private void renderExpenseCategoryItems(String categoryName,LinearLayout panel,ArrayList<ExpenseEntryRow> entries,LinearLayout entriesContainer,TextView total,LinearLayout categoryGrid,TextView categoryTitle){
         panel.removeAllViews();panel.addView(txt(categoryName+" ITEMS",11,GREEN,true));
-        LinearLayout itemGrid=col();LinearLayout.LayoutParams igp=lp(-1,-2);igp.topMargin=dp(8);panel.addView(itemGrid,igp);
+        LinearLayout itemGrid=col();LinearLayout.LayoutParams igp=lp(-1,-2);igp.topMargin=dp(5);panel.addView(itemGrid,igp);
         Cursor q=db.getReadableDatabase().rawQuery("SELECT name,icon FROM category_items WHERE category=? ORDER BY name COLLATE NOCASE",new String[]{categoryName});
         ArrayList<String[]> savedItems=new ArrayList<>();while(q.moveToNext())savedItems.add(new String[]{q.getString(0),q.getString(1)});q.close();
         if(savedItems.isEmpty())panel.addView(txt("No saved items yet. Add a new item below.",12,muted,false));
         for(int base=0;base<savedItems.size();base+=3){
-            LinearLayout itemRow=row();LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(7);itemGrid.addView(itemRow,rowLp);
+            LinearLayout itemRow=row();LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(5);itemGrid.addView(itemRow,rowLp);
             for(int j=base;j<Math.min(base+3,savedItems.size());j++){
                 String itemName=savedItems.get(j)[0],icon=savedItems.get(j)[1];
-                LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(4),dp(7),dp(4),dp(7));tile.setBackground(shape(surface,12));
-                LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,dp(82),1);tp.leftMargin=dp(3);tp.rightMargin=dp(3);itemRow.addView(tile,tp);
-                TextView symbol=txt(icon==null||icon.trim().isEmpty()?"📦":icon,23,ink,true);symbol.setGravity(Gravity.CENTER);tile.addView(symbol,lp(-1,36));
-                TextView label=txt(itemName,10,ink,true);label.setGravity(Gravity.CENTER);label.setMaxLines(2);label.setEllipsize(android.text.TextUtils.TruncateAt.END);tile.addView(label,lp(-1,34));
+                LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(4),dp(4),dp(4),dp(4));tile.setBackground(shape(surface,12));
+                LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,dp(70),1);tp.leftMargin=dp(3);tp.rightMargin=dp(3);itemRow.addView(tile,tp);
+                TextView symbol=txt(icon==null||icon.trim().isEmpty()?"📦":icon,23,ink,true);symbol.setGravity(Gravity.CENTER);tile.addView(symbol,lp(-1,32));
+                TextView label=txt(itemName,10,ink,true);label.setGravity(Gravity.CENTER);label.setMaxLines(2);label.setEllipsize(android.text.TextUtils.TruncateAt.END);tile.addView(label,lp(-1,30));
                 tile.setOnClickListener(v->showQuickExpenseAmountDialog(categoryName,itemName,entries,entriesContainer,total));
             }
-            while(itemRow.getChildCount()<3){View spacer=new View(this);itemRow.addView(spacer,new LinearLayout.LayoutParams(0,dp(82),1));}
+            while(itemRow.getChildCount()<3){View spacer=new View(this);itemRow.addView(spacer,new LinearLayout.LayoutParams(0,dp(70),1));}
         }
-        Button create=smallFilter("+  New item in "+categoryName);LinearLayout.LayoutParams createLp=lp(-1,42);createLp.topMargin=dp(8);panel.addView(create,createLp);
+        Button create=smallFilter("+  New item in "+categoryName);LinearLayout.LayoutParams createLp=lp(-1,42);createLp.topMargin=dp(5);panel.addView(create,createLp);
         create.setOnClickListener(v->{
             EditText name=new EditText(this);name.setSingleLine(true);name.setHint("Enter new item name");
             new AlertDialog.Builder(this).setTitle("New item in "+categoryName).setView(name).setNegativeButton("Cancel",null).setPositiveButton("Add",(d,w)->{
@@ -584,21 +584,26 @@ public class MainActivity extends FragmentActivity {
                 renderExpenseCategoryItems(categoryName,panel,entries,entriesContainer,total,categoryGrid,categoryTitle);
             }).show();
         });
-        LinearLayout panelActions=row();LinearLayout.LayoutParams actionsLp=lp(-1,46);actionsLp.topMargin=dp(10);panel.addView(panelActions,actionsLp);
+        LinearLayout panelActions=row();LinearLayout.LayoutParams actionsLp=lp(-1,42);actionsLp.topMargin=dp(7);panel.addView(panelActions,actionsLp);
         Button changeCategory=smallFilter("Change category");panelActions.addView(changeCategory,new LinearLayout.LayoutParams(0,-1,1));
         Button done=primaryButton("Done");LinearLayout.LayoutParams doneLp=new LinearLayout.LayoutParams(0,-1,1);doneLp.leftMargin=dp(8);panelActions.addView(done,doneLp);
         changeCategory.setOnClickListener(v->{panel.setVisibility(View.GONE);categoryTitle.setVisibility(View.VISIBLE);categoryGrid.setVisibility(View.VISIBLE);});
         done.setOnClickListener(v->{panel.setVisibility(View.GONE);categoryGrid.setVisibility(View.GONE);Toast.makeText(this,"Items selected. Save expense when ready.",Toast.LENGTH_SHORT).show();});
     }
     private void showQuickExpenseAmountDialog(String categoryName,String itemName,ArrayList<ExpenseEntryRow> entries,LinearLayout entriesContainer,TextView total){
-        LinearLayout box=col();box.setPadding(dp(5),dp(4),dp(5),0);
-        box.addView(txt(categoryName+"  ·  "+itemName,14,GREEN,true));
-        TextView amountLabel=txt("AMOUNT (Rs.)  *",10,muted,true);amountLabel.setPadding(0,dp(10),0,0);box.addView(amountLabel);
-        EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Enter amount");box.addView(amount,lp(-1,48));
-        TextView descLabel=txt("DESCRIPTION (OPTIONAL)",10,muted,true);descLabel.setPadding(0,dp(8),0,0);box.addView(descLabel);
-        EditText desc=new EditText(this);desc.setSingleLine(true);desc.setHint("Other detail");box.addView(desc,lp(-1,46));
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Add purchase item").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Add item",null).create();
-        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{
+        LinearLayout box=col();box.setPadding(dp(3),dp(2),dp(3),0);
+        TextView chosen=txt(categoryName+"  ·  "+itemName,14,GREEN,true);chosen.setPadding(dp(2),0,dp(2),dp(3));box.addView(chosen);
+        TextView amountLabel=txt("AMOUNT (Rs.)  *",10,muted,true);amountLabel.setPadding(0,dp(5),0,0);box.addView(amountLabel);
+        EditText amount=words(new EditText(this));amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Enter amount");amount.setPadding(dp(10),0,dp(10),0);box.addView(amount,lp(-1,44));
+        TextView descLabel=txt("DESCRIPTION (OPTIONAL)",10,muted,true);descLabel.setPadding(0,dp(4),0,0);box.addView(descLabel);
+        EditText desc=words(new EditText(this));desc.setSingleLine(true);desc.setHint("Other detail");desc.setPadding(dp(10),0,dp(10),0);box.addView(desc,lp(-1,42));
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Add purchase item").setNegativeButton("Cancel",null).setPositiveButton("Add item",null).create();
+        dialog.setView(box,dp(22),dp(5),dp(22),dp(0));
+        dialog.setOnShowListener(v->{
+            Button positive=dialog.getButton(AlertDialog.BUTTON_POSITIVE),negative=dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+            positive.setTextColor(GREEN);positive.setAllCaps(false);positive.setMinHeight(dp(44));positive.setPadding(dp(12),0,dp(12),0);
+            negative.setTextColor(muted);negative.setAllCaps(false);negative.setMinHeight(dp(44));negative.setPadding(dp(12),0,dp(12),0);
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{
             double value;try{value=Double.parseDouble(amount.getText().toString().trim());if(value<=0||Double.isInfinite(value)||Double.isNaN(value))throw new Exception();}catch(Exception ex){amount.setError("Enter a valid amount");return;}
             ExpenseEntryRow entry=new ExpenseEntryRow();entry.category=categoryName;entry.item=itemName;entry.amount=String.valueOf(value);entry.description=desc.getText().toString().trim();
             entries.add(entry);entry.summary=row();entry.summary.setPadding(dp(10),dp(5),dp(7),dp(5));entry.summary.setBackground(shape(bg,11));
@@ -606,8 +611,9 @@ public class MainActivity extends FragmentActivity {
             updateExpenseEntrySummary(entry,entries,entriesContainer,total);
             entry.summary.setOnClickListener(x->showExpenseItemEditor(entries,entriesContainer,total,entry,entry.category,entry.item));
             refreshExpenseEntryTotal(entries,total);dialog.dismiss();
-        }));
+        });
         dialog.show();
+        if(dialog.getWindow()!=null){int width=Math.min(getResources().getDisplayMetrics().widthPixels-dp(36),dp(420));dialog.getWindow().setLayout(width,-2);}
     }
     private void pickDate(TextView target){Calendar c=Calendar.getInstance();try{c.setTime(display.parse(target.getText().toString()));}catch(Exception e){}new DatePickerDialog(this,(v,y,m,d)->{Calendar x=Calendar.getInstance();x.set(y,m,d);target.setText(display.format(x.getTime()));},c.get(Calendar.YEAR),c.get(Calendar.MONTH),c.get(Calendar.DAY_OF_MONTH)).show();}
     private void addMonthlyOverview(LinearLayout parent){LinearLayout overview=card(parent);LinearLayout head=row();head.addView(txt("▥  Monthly Overview",17,ink,true),new LinearLayout.LayoutParams(0,-2,1));Button prev=smallButton("‹"),next=smallButton("›");TextView monthName=txt(monthFmt.format(month.getTime()),12,ink,true);monthName.setGravity(Gravity.CENTER);head.addView(prev,lp(32,32));head.addView(monthName,lp(105,32));head.addView(next,lp(32,32));overview.addView(head);Chart chart=new Chart(this);overview.addView(chart,lp(-1,175));LinearLayout legend=col();overview.addView(legend);Runnable refresh=()->{String key=new SimpleDateFormat("yyyy-MM",Locale.US).format(month.getTime());Map<String,Double> data=new LinkedHashMap<>();double total=0;for(String cat:CATS)data.put(cat,0d);Cursor q=db.getReadableDatabase().rawQuery("SELECT category,SUM(amount) FROM expenses WHERE substr(date,1,7)=? GROUP BY category",new String[]{key});while(q.moveToNext()){String cat=q.getString(0);double amount=q.getDouble(1);data.put(cat,amount);total+=amount;}q.close();chart.setData(data,total);monthName.setText(monthFmt.format(month.getTime()));legend.removeAllViews();for(String cat:CATS){double amount=data.get(cat);if(amount<=0)continue;LinearLayout r=row();r.setPadding(0,dp(4),0,dp(4));r.addView(txt("•  "+cat,12,ink,true),new LinearLayout.LayoutParams(0,-2,1));r.addView(txt(money(amount),12,ink,true));legend.addView(r);}if(total<=0)legend.addView(txt("No expenses recorded for this month.",12,muted,false));};prev.setOnClickListener(v->{month.add(Calendar.MONTH,-1);refresh.run();});next.setOnClickListener(v->{month.add(Calendar.MONTH,1);refresh.run();});refresh.run();}
