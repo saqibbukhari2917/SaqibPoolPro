@@ -600,7 +600,7 @@ public class MainActivity extends FragmentActivity {
              .addOnFailureListener(e->{cloudSyncInProgress=false;refreshPendingCloudText();Toast.makeText(this,"Cloud sync could not start: "+e.getMessage(),Toast.LENGTH_LONG).show();});
      }
      private void processPendingCloudDeletes(ArrayList<String> pending,int index){
-         while(index<pending.size()&&!pending.get(index).startsWith("delete-expenses:")&&!pending.get(index).startsWith("delete-reminders:")&&!pending.get(index).startsWith("delete-categoryItems:"))index++;
+         while(index<pending.size()&&!pending.get(index).startsWith("delete-expenses:")&&!pending.get(index).startsWith("delete-incomes:")&&!pending.get(index).startsWith("delete-reminders:")&&!pending.get(index).startsWith("delete-categoryItems:"))index++;
          if(index>=pending.size()){restoreCloudRecords();return;}
          String entry=pending.get(index);int split=entry.indexOf(':');String operation=entry.substring(0,split),id=entry.substring(split+1);
          String collection=operation.substring("delete-".length());
@@ -642,23 +642,32 @@ public class MainActivity extends FragmentActivity {
          }).addOnFailureListener(e->{cloudSyncInProgress=false;Toast.makeText(this,"Cloud expense restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show();});
      }
      private void restoreCloudCategoryItems(){
-         cloudCollection("categoryItems").get().addOnSuccessListener(items->{
-             SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();
-             try{
-                 for(DocumentSnapshot d:items.getDocuments()){
-                     String cat=d.getString("category"),name=d.getString("name");
-                     if(cat==null||name==null)continue;
-                     if(Boolean.TRUE.equals(d.getBoolean("deleted"))){sql.delete("category_items","category=? AND name=?",new String[]{cat,name});continue;}
-                     String icon=d.getString("icon");if(icon==null||icon.isEmpty())icon="📦";
-                     ContentValues values=new ContentValues();values.put("icon",icon);
-                     int changed=sql.update("category_items",values,"category=? AND name=?",new String[]{cat,name});
-                     if(changed==0){values.put("category",cat);values.put("name",name);sql.insertWithOnConflict("category_items",null,values,SQLiteDatabase.CONFLICT_IGNORE);}
-                 }
-                 sql.setTransactionSuccessful();
-             }finally{sql.endTransaction();}
-             uploadAllLocal();updateAdminStats();reschedulePendingReminders();cloudSyncInProgress=false;
-             if(uiReady)showPage(page);
-         }).addOnFailureListener(e->{cloudSyncInProgress=false;Toast.makeText(this,"Cloud item restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show();});
+         cloudCollection("incomes").get().addOnSuccessListener(incomeDocs->{
+             SQLiteDatabase incomeDb=db.getWritableDatabase();incomeDb.beginTransaction();
+             try{for(DocumentSnapshot d:incomeDocs.getDocuments()){
+                 long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");
+                 if(Boolean.TRUE.equals(d.getBoolean("deleted"))){incomeDb.delete("incomes","id=?",new String[]{String.valueOf(id)});continue;}
+                 Cursor exists=incomeDb.rawQuery("SELECT id FROM incomes WHERE id=?",new String[]{String.valueOf(id)});boolean found=exists.moveToFirst();exists.close();
+                 if(!found){ContentValues v=new ContentValues();v.put("id",id);v.put("amount",d.getDouble("amount")==null?0:d.getDouble("amount"));v.put("source",d.getString("source")==null?"":d.getString("source"));v.put("date",d.getString("date")==null?iso.format(new Date()):d.getString("date"));v.put("note",d.getString("note")==null?"":d.getString("note"));incomeDb.insert("incomes",null,v);}
+             }incomeDb.setTransactionSuccessful();}finally{incomeDb.endTransaction();}
+             cloudCollection("categoryItems").get().addOnSuccessListener(items->{
+                 SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();
+                 try{
+                     for(DocumentSnapshot d:items.getDocuments()){
+                         String cat=d.getString("category"),name=d.getString("name");
+                         if(cat==null||name==null)continue;
+                         if(Boolean.TRUE.equals(d.getBoolean("deleted"))){sql.delete("category_items","category=? AND name=?",new String[]{cat,name});continue;}
+                         String icon=d.getString("icon");if(icon==null||icon.isEmpty())icon="📦";
+                         ContentValues values=new ContentValues();values.put("icon",icon);
+                         int changed=sql.update("category_items",values,"category=? AND name=?",new String[]{cat,name});
+                         if(changed==0){values.put("category",cat);values.put("name",name);sql.insertWithOnConflict("category_items",null,values,SQLiteDatabase.CONFLICT_IGNORE);}
+                     }
+                     sql.setTransactionSuccessful();
+                 }finally{sql.endTransaction();}
+                 uploadAllLocal();updateAdminStats();reschedulePendingReminders();cloudSyncInProgress=false;
+                 if(uiReady)showPage(page);
+             }).addOnFailureListener(e->{cloudSyncInProgress=false;Toast.makeText(this,"Cloud item restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show();});
+         }).addOnFailureListener(e->{cloudSyncInProgress=false;Toast.makeText(this,"Cloud income restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show();});
      }
      private int getRetentionMonths(){
         android.content.SharedPreferences p=getPreferences(0);
@@ -673,6 +682,7 @@ public class MainActivity extends FragmentActivity {
     private void cleanupOldRecords(boolean notify){cleanupOldRecords(notify,Math.max(1,getRetentionMonths()));}
     private void cleanupOldRecords(boolean notify,int months){
         String cutoff=retentionCutoff(months);
+        ArrayList<Long> incomeIds=new ArrayList<>();Cursor incomeCursor=db.getReadableDatabase().rawQuery("SELECT id FROM incomes WHERE date<?",new String[]{cutoff});while(incomeCursor.moveToNext())incomeIds.add(incomeCursor.getLong(0));incomeCursor.close();
         ArrayList<Long> expenseIds=new ArrayList<>();
         Cursor e=db.getReadableDatabase().rawQuery("SELECT id FROM expenses WHERE date<?",new String[]{cutoff});
         while(e.moveToNext())expenseIds.add(e.getLong(0));e.close();
@@ -683,13 +693,15 @@ public class MainActivity extends FragmentActivity {
         while(r.moveToNext())reminderIds.add(r.getLong(0));r.close();
         SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();
         try{
+            for(long id:incomeIds)sql.delete("incomes","id=?",new String[]{String.valueOf(id)});
             for(long id:expenseIds)sql.delete("expenses","id=?",new String[]{String.valueOf(id)});
             for(long id:reminderIds)sql.delete("reminders","id=?",new String[]{String.valueOf(id)});
             sql.setTransactionSuccessful();
         }finally{sql.endTransaction();}
+        for(long id:incomeIds)deleteCloudRecord("incomes",id);
         for(long id:expenseIds)deleteCloudRecord("expenses",id);
         for(long id:reminderIds)deleteCloudRecord("reminders",id);
-        if(notify)Toast.makeText(this,"Deleted "+expenseIds.size()+" old expenses and "+reminderIds.size()+" completed reminders",Toast.LENGTH_LONG).show();
+        if(notify)Toast.makeText(this,"Deleted "+incomeIds.size()+" old money-in records, "+expenseIds.size()+" old expenses and "+reminderIds.size()+" completed reminders",Toast.LENGTH_LONG).show();
         updateAdminStats();
         if(uiReady&&page==2)showPage(2);
     }
@@ -704,6 +716,9 @@ public class MainActivity extends FragmentActivity {
     }
     private void reschedulePendingReminders(){Cursor c=db.getReadableDatabase().rawQuery("SELECT id,item,trigger_at FROM reminders WHERE done=0 AND trigger_at>?",new String[]{String.valueOf(System.currentTimeMillis())});while(c.moveToNext())ReminderReceiver.schedule(this,c.getLong(0),c.getString(1),c.getLong(2));c.close();}
     private void uploadAllLocal(){
+        Cursor inc=db.getReadableDatabase().rawQuery("SELECT id,amount,source,date,note FROM incomes",null);
+        ArrayList<Map<String,Object>> incomeData=new ArrayList<>();
+        while(inc.moveToNext()){Map<String,Object> m=new HashMap<>();m.put("id",inc.getLong(0));m.put("amount",inc.getDouble(1));m.put("source",inc.getString(2));m.put("date",inc.getString(3));m.put("note",inc.getString(4));incomeData.add(m);}inc.close();
         Cursor e=db.getReadableDatabase().rawQuery("SELECT id,category,description,amount,date,item FROM expenses",null);
         ArrayList<Map<String,Object>> expenseData=new ArrayList<>();
         while(e.moveToNext()){
@@ -724,7 +739,7 @@ public class MainActivity extends FragmentActivity {
         ArrayList<Map<String,Object>> itemData=new ArrayList<>();
         while(ci.moveToNext()){Map<String,Object> m=new HashMap<>();m.put("name",ci.getString(0));m.put("category",ci.getString(1));m.put("icon",ci.getString(2));itemData.add(m);}
         ci.close();
-        final int total=expenseData.size()+reminderData.size()+itemData.size();
+        final int total=incomeData.size()+expenseData.size()+reminderData.size()+itemData.size();
         if(total==0){Toast.makeText(this,"Cloud backup complete — no records to upload",Toast.LENGTH_LONG).show();return;}
         Toast.makeText(this,"Uploading "+total+" records to cloud…",Toast.LENGTH_SHORT).show();
         final int[] completed={0};
@@ -737,6 +752,12 @@ public class MainActivity extends FragmentActivity {
                 else Toast.makeText(this,"Cloud backup complete ("+total+" records)",Toast.LENGTH_LONG).show();
             }
         };
+        for(Map<String,Object> m:incomeData){
+            String id=String.valueOf(m.get("id"));markCloudPending("incomes",id);
+            cloudCollection("incomes").document(id).set(m)
+                .addOnSuccessListener(v->{clearCloudPending("incomes",id);finishOne.run();})
+                .addOnFailureListener(err->{failed[0]=true;if(firstError[0]==null)firstError[0]=err.getMessage();finishOne.run();});
+        }
         for(Map<String,Object> m:expenseData){
             String id=String.valueOf(m.get("id"));
             markCloudPending("expenses",id);
@@ -776,12 +797,14 @@ public class MainActivity extends FragmentActivity {
             cloudCollection("categoryItems").document(key).set(tombstone).addOnSuccessListener(v->clearCloudPending(operation,key)).addOnFailureListener(e->refreshPendingCloudText());
         }
     }
+    private void pushIncome(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT amount,source,date,note FROM incomes WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("amount",c.getDouble(0));m.put("source",c.getString(1));m.put("date",c.getString(2));m.put("note",c.getString(3));c.close();String key=String.valueOf(id);markCloudPending("incomes",key);cloudCollection("incomes").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("incomes",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
     private void pushExpense(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date,item FROM expenses WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("category",c.getString(0));m.put("description",c.getString(1));m.put("amount",c.getDouble(2));m.put("date",c.getString(3));m.put("item",c.getString(4));c.close();String key=String.valueOf(id);markCloudPending("expenses",key);cloudCollection("expenses").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("expenses",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
     private void pushReminder(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT item,trigger_at,done,estimated_amount,expense_id FROM reminders WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("item",c.getString(0));m.put("trigger_at",c.getLong(1));m.put("done",c.getLong(2));m.put("estimated_amount",c.getDouble(3));m.put("expense_id",c.isNull(4)?null:c.getLong(4));c.close();String key=String.valueOf(id);markCloudPending("reminders",key);cloudCollection("reminders").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("reminders",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
     private void deleteCloudRecord(String collection,long id){String key=String.valueOf(id);String operation="delete-"+collection;markCloudPending(operation,key);if(FirebaseAuth.getInstance().getCurrentUser()!=null){Map<String,Object> tombstone=new HashMap<>();tombstone.put("id",id);tombstone.put("deleted",true);tombstone.put("deletedAt",FieldValue.serverTimestamp());cloudCollection(collection).document(key).set(tombstone).addOnSuccessListener(v->clearCloudPending(operation,key)).addOnFailureListener(e->refreshPendingCloudText());}}
     private long estimateLocalDataBytes(){
         long n=0;Cursor e=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date FROM expenses",null);
         while(e.moveToNext()){for(int i=0;i<4;i++)if(!e.isNull(i))n+=String.valueOf(e.getString(i)).getBytes(java.nio.charset.StandardCharsets.UTF_8).length+8;}e.close();
+        Cursor income=db.getReadableDatabase().rawQuery("SELECT source,amount,date,note FROM incomes",null);while(income.moveToNext()){for(int i=0;i<4;i++)if(!income.isNull(i))n+=String.valueOf(income.getString(i)).getBytes(java.nio.charset.StandardCharsets.UTF_8).length+8;}income.close();
         Cursor r=db.getReadableDatabase().rawQuery("SELECT item,trigger_at,done,estimated_amount,expense_id FROM reminders",null);
         while(r.moveToNext()){for(int i=0;i<5;i++)if(!r.isNull(i))n+=String.valueOf(r.getString(i)).getBytes(java.nio.charset.StandardCharsets.UTF_8).length+8;}r.close();return n;
     }
