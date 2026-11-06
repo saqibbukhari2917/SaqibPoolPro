@@ -453,12 +453,24 @@ public class MainActivity extends FragmentActivity {
         Spinner cat=new Spinner(this);cat.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,CATS));
         String startCategory=editing==null?initialCategory:editing.category;
         cat.setSelection(Math.max(0,Arrays.asList(CATS).indexOf(startCategory)));box.addView(cat,lp(-1,46));
-        TextView itemLabel=txt("SAVED ITEM (OPTIONAL)",10,muted,true);itemLabel.setPadding(0,dp(8),0,0);box.addView(itemLabel);
-        Spinner item=new Spinner(this);String startItem=editing==null?initialItem:editing.item;loadExpenseItems(startCategory,item,startItem);box.addView(item,lp(-1,46));
+        TextView itemLabel=txt("SAVED ITEM  *",10,muted,true);itemLabel.setPadding(0,dp(8),0,0);box.addView(itemLabel);
+        Spinner item=new Spinner(this);String startItem=editing==null?initialItem:editing.item;loadRequiredExpenseItems(startCategory,item,startItem);box.addView(item,lp(-1,46));
+        Button newItem=smallFilter("+  New item in this category");box.addView(newItem,lp(-1,40));
+        newItem.setOnClickListener(v->{
+            EditText name=new EditText(this);name.setSingleLine(true);name.setHint("Enter new item name");
+            new AlertDialog.Builder(this).setTitle("New item").setView(name).setNegativeButton("Cancel",null).setPositiveButton("Add",(d,w)->{
+                String n=name.getText().toString().trim();if(n.isEmpty()){Toast.makeText(this,"Enter an item name",Toast.LENGTH_SHORT).show();return;}
+                String chosenCat=cat.getSelectedItem().toString();ContentValues values=new ContentValues();values.put("name",n);values.put("category",chosenCat);values.put("icon",suggestItemIcon(n));
+                long id=db.getWritableDatabase().insertWithOnConflict("category_items",null,values,SQLiteDatabase.CONFLICT_IGNORE);
+                if(id>0)pushCategoryItem(id);
+                loadRequiredExpenseItems(chosenCat,item,n);
+                if(id==-1)Toast.makeText(this,"This item already exists. It is selected.",Toast.LENGTH_SHORT).show();
+            }).show();
+        });
         cat.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
             String last=startCategory;
             public void onNothingSelected(AdapterView<?> a){}
-            public void onItemSelected(AdapterView<?> a,View v,int pos,long id){String next=CATS[pos];if(!next.equals(last))loadExpenseItems(next,item,null);last=next;}
+            public void onItemSelected(AdapterView<?> a,View v,int pos,long id){String next=CATS[pos];if(!next.equals(last)){loadRequiredExpenseItems(next,item,null);last=next;}}
         });
         TextView descLabel=txt("DESCRIPTION (OPTIONAL)",10,muted,true);descLabel.setPadding(0,dp(8),0,0);box.addView(descLabel);
         EditText desc=new EditText(this);desc.setSingleLine(true);desc.setHint("Other detail");if(editing!=null)desc.setText(editing.description);box.addView(desc,lp(-1,46));
@@ -469,7 +481,8 @@ public class MainActivity extends FragmentActivity {
             String raw=amount.getText().toString().trim();double value;
             try{value=Double.parseDouble(raw);if(value<=0||Double.isInfinite(value)||Double.isNaN(value))throw new Exception();}catch(Exception ex){amount.setError("Enter a valid amount");return;}
             ExpenseEntryRow entry=editing==null?new ExpenseEntryRow():editing;
-            entry.category=cat.getSelectedItem().toString();entry.item=item.getSelectedItem()==null?"No item":item.getSelectedItem().toString();
+            if(item.getSelectedItemPosition()<=0||item.getSelectedItem()==null){Toast.makeText(this,"Please select an item or add a new item",Toast.LENGTH_SHORT).show();return;}
+            entry.category=cat.getSelectedItem().toString();entry.item=item.getSelectedItem().toString();
             entry.description=desc.getText().toString().trim();entry.amount=String.valueOf(value);
             if(editing==null){entries.add(entry);entry.summary=row();entry.summary.setPadding(dp(10),dp(5),dp(7),dp(5));entry.summary.setBackground(shape(bg,11));LinearLayout.LayoutParams rp=lp(-1,58);rp.bottomMargin=dp(7);entriesContainer.addView(entry.summary,rp);}
             updateExpenseEntrySummary(entry,entries,entriesContainer,totalText);
@@ -504,7 +517,8 @@ public class MainActivity extends FragmentActivity {
                 try{
                     for(ExpenseEntryRow entry:entries){
                         ContentValues cv=new ContentValues();cv.put("category",entry.category);
-                        if(entry.item==null||entry.item.isEmpty()||"No item".equals(entry.item))cv.putNull("item");else cv.put("item",entry.item);
+                        if(entry.item==null||entry.item.trim().isEmpty()||"No item".equals(entry.item)||"Select an item".equals(entry.item))throw new Exception("Please select an item for every expense");
+                        cv.put("item",entry.item);
                         cv.put("description",entry.description==null?"":entry.description);cv.put("amount",Double.parseDouble(entry.amount));cv.put("date",purchaseDate);
                         if(groupId!=null)cv.put("group_id",groupId);
                         long id=sql.insert("expenses",null,cv);if(id<=0)throw new Exception("Could not save an item");savedIds.add(id);
@@ -600,6 +614,15 @@ public class MainActivity extends FragmentActivity {
         ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,names);
         itemSpinner.setAdapter(adapter);
         int selected=names.indexOf(selectedItem==null||selectedItem.isEmpty()?"No item":selectedItem);
+        itemSpinner.setSelection(Math.max(0,selected));
+    }
+    private void loadRequiredExpenseItems(String cat,Spinner itemSpinner,String selectedItem){
+        ArrayList<String> names=new ArrayList<>();names.add("Select an item");
+        Cursor c=db.getReadableDatabase().rawQuery("SELECT name FROM category_items WHERE category=? ORDER BY name COLLATE NOCASE",new String[]{cat});
+        while(c.moveToNext())names.add(c.getString(0));c.close();
+        ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,names);
+        itemSpinner.setAdapter(adapter);
+        int selected=names.indexOf(selectedItem==null||selectedItem.isEmpty()?"":selectedItem);
         itemSpinner.setSelection(Math.max(0,selected));
     }
     private void editExpense(long id,String cat,String desc,double value,String date){
@@ -765,7 +788,7 @@ public class MainActivity extends FragmentActivity {
                      long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");
                      if(Boolean.TRUE.equals(d.getBoolean("deleted"))){sql.delete("expenses","id=?",new String[]{String.valueOf(id)});continue;}
                      Cursor c=sql.rawQuery("SELECT id FROM expenses WHERE id=?",new String[]{String.valueOf(id)});boolean exists=c.moveToFirst();c.close();
-                     if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("category",d.getString("category"));v.put("description",d.getString("description")==null?"":d.getString("description"));if(d.getString("item")==null)v.putNull("item");else v.put("item",d.getString("item"));v.put("amount",d.getDouble("amount")==null?0:d.getDouble("amount"));v.put("date",d.getString("date"));sql.insert("expenses",null,v);}
+                     if(!exists){ContentValues v=new ContentValues();v.put("id",id);v.put("category",d.getString("category"));v.put("description",d.getString("description")==null?"":d.getString("description"));if(d.getString("item")==null)v.putNull("item");else v.put("item",d.getString("item"));v.put("amount",d.getDouble("amount")==null?0:d.getDouble("amount"));v.put("date",d.getString("date"));String groupId=d.getString("group_id");if(groupId==null)v.putNull("group_id");else v.put("group_id",groupId);sql.insert("expenses",null,v);}
                  }
                  sql.setTransactionSuccessful();
              }finally{sql.endTransaction();}
@@ -863,11 +886,11 @@ public class MainActivity extends FragmentActivity {
         Cursor inc=db.getReadableDatabase().rawQuery("SELECT id,amount,source,date,note FROM incomes",null);
         ArrayList<Map<String,Object>> incomeData=new ArrayList<>();
         while(inc.moveToNext()){Map<String,Object> m=new HashMap<>();m.put("id",inc.getLong(0));m.put("amount",inc.getDouble(1));m.put("source",inc.getString(2));m.put("date",inc.getString(3));m.put("note",inc.getString(4));incomeData.add(m);}inc.close();
-        Cursor e=db.getReadableDatabase().rawQuery("SELECT id,category,description,amount,date,item FROM expenses",null);
+        Cursor e=db.getReadableDatabase().rawQuery("SELECT id,category,description,amount,date,item,group_id FROM expenses",null);
         ArrayList<Map<String,Object>> expenseData=new ArrayList<>();
         while(e.moveToNext()){
             Map<String,Object> m=new HashMap<>();
-            m.put("id",e.getLong(0));m.put("category",e.getString(1));m.put("description",e.getString(2));m.put("amount",e.getDouble(3));m.put("date",e.getString(4));m.put("item",e.getString(5));
+            m.put("id",e.getLong(0));m.put("category",e.getString(1));m.put("description",e.getString(2));m.put("amount",e.getDouble(3));m.put("date",e.getString(4));m.put("item",e.getString(5));m.put("group_id",e.isNull(6)?null:e.getString(6));
             expenseData.add(m);
         }
         e.close();
@@ -942,7 +965,7 @@ public class MainActivity extends FragmentActivity {
         }
     }
     private void pushIncome(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT amount,source,date,note FROM incomes WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("amount",c.getDouble(0));m.put("source",c.getString(1));m.put("date",c.getString(2));m.put("note",c.getString(3));c.close();String key=String.valueOf(id);markCloudPending("incomes",key);cloudCollection("incomes").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("incomes",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
-    private void pushExpense(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date,item FROM expenses WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("category",c.getString(0));m.put("description",c.getString(1));m.put("amount",c.getDouble(2));m.put("date",c.getString(3));m.put("item",c.getString(4));c.close();String key=String.valueOf(id);markCloudPending("expenses",key);cloudCollection("expenses").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("expenses",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
+    private void pushExpense(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date,item,group_id FROM expenses WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("category",c.getString(0));m.put("description",c.getString(1));m.put("amount",c.getDouble(2));m.put("date",c.getString(3));m.put("item",c.getString(4));m.put("group_id",c.isNull(5)?null:c.getString(5));c.close();String key=String.valueOf(id);markCloudPending("expenses",key);cloudCollection("expenses").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("expenses",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
     private void pushReminder(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT item,trigger_at,done,estimated_amount,expense_id,category FROM reminders WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("item",c.getString(0));m.put("trigger_at",c.getLong(1));m.put("done",c.getLong(2));m.put("estimated_amount",c.getDouble(3));m.put("expense_id",c.isNull(4)?null:c.getLong(4));m.put("category",c.getString(5));c.close();String key=String.valueOf(id);markCloudPending("reminders",key);cloudCollection("reminders").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("reminders",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
     private void deleteCloudRecord(String collection,long id){String key=String.valueOf(id);String operation="delete-"+collection;markCloudPending(operation,key);if(FirebaseAuth.getInstance().getCurrentUser()!=null){Map<String,Object> tombstone=new HashMap<>();tombstone.put("id",id);tombstone.put("deleted",true);tombstone.put("deletedAt",FieldValue.serverTimestamp());cloudCollection(collection).document(key).set(tombstone).addOnSuccessListener(v->clearCloudPending(operation,key)).addOnFailureListener(e->refreshPendingCloudText());}}
     private long estimateLocalDataBytes(){
