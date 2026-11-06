@@ -238,7 +238,7 @@ public class MainActivity extends FragmentActivity {
     private void addItemIcon(LinearLayout parent,String icon,int size,LinearLayout.LayoutParams params){
         if(icon!=null&&icon.startsWith("@iconify:")){
             ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.FIT_CENTER);parent.addView(image,params);
-            String key=icon.substring(9);String url="https://api.iconify.design/"+key+".png?color=%23"+(dark?"F1F4F0":"245B45");
+            String key=icon.substring(9);String url="https://api.iconify.design/"+key.replace(":","/")+".png?color=%23"+(dark?"F1F4F0":"245B45");
             new Thread(()->{try{java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL(url).openConnection();c.setConnectTimeout(7000);c.setReadTimeout(7000);c.setRequestProperty("User-Agent","SaqibFinance/1.0");Bitmap bitmap=BitmapFactory.decodeStream(c.getInputStream());c.disconnect();if(bitmap!=null)runOnUiThread(()->image.setImageBitmap(bitmap));}catch(Exception ignored){} }).start();
         }else{TextView t=txt(icon==null?"📦":icon,size,ink,true);t.setGravity(Gravity.CENTER);parent.addView(t,params);}
     }
