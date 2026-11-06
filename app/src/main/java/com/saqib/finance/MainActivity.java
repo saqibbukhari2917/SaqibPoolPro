@@ -447,9 +447,14 @@ public class MainActivity extends FragmentActivity {
         entry.panel.addView(txt("CATEGORY",10,muted,true));entry.panel.addView(entry.categorySpinner,lp(-1,46));
         entry.itemSpinner=new Spinner(this);loadExpenseItems(initialCategory,entry.itemSpinner,initialItem);
         TextView itemLabel=txt("SAVED ITEM (OPTIONAL)",10,muted,true);itemLabel.setPadding(0,dp(7),0,0);entry.panel.addView(itemLabel);entry.panel.addView(entry.itemSpinner,lp(-1,46));
+        final String[] lastCategory={initialCategory};
         entry.categorySpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
             public void onNothingSelected(AdapterView<?> a){}
-            public void onItemSelected(AdapterView<?> a,View v,int pos,long id){loadExpenseItems(CATS[pos],entry.itemSpinner,null);}
+            public void onItemSelected(AdapterView<?> a,View v,int pos,long id){
+                String nextCategory=CATS[pos];
+                if(!nextCategory.equals(lastCategory[0]))loadExpenseItems(nextCategory,entry.itemSpinner,null);
+                lastCategory[0]=nextCategory;
+            }
         });
         entry.description=new EditText(this);entry.description.setSingleLine(true);entry.description.setHint("Description / other detail (optional)");
         TextView descLabel=txt("DESCRIPTION (OPTIONAL)",10,muted,true);descLabel.setPadding(0,dp(7),0,0);entry.panel.addView(descLabel);entry.panel.addView(entry.description,lp(-1,48));
@@ -524,7 +529,11 @@ public class MainActivity extends FragmentActivity {
             String key=q.getString(0),date=q.getString(1),firstCategory=q.getString(5);
             double total=q.getDouble(2);int count=q.getInt(3),categoryCount=q.getInt(4);
             if(count==1){
-                Cursor one=db.getReadableDatabase().rawQuery("SELECT id,category,description,amount,date,item FROM expenses WHERE "+groupExpr+"=?",new String[]{key});
+                StringBuilder oneSql=new StringBuilder("SELECT id,category,description,amount,date,item FROM expenses WHERE "+groupExpr+"=?");ArrayList<String> oneArgs=new ArrayList<>();oneArgs.add(key);
+                if(!from.isEmpty()){oneSql.append(" AND date>=?");oneArgs.add(from);}
+                if(!to.isEmpty()){oneSql.append(" AND date<=?");oneArgs.add(to);}
+                if(!category.equals("All categories")){oneSql.append(" AND category=?");oneArgs.add(category);}
+                Cursor one=db.getReadableDatabase().rawQuery(oneSql.toString(),oneArgs.toArray(new String[0]));
                 if(one.moveToFirst()){
                     long id=one.getLong(0);String cat=one.getString(1),desc=one.getString(2),item=one.getString(5);double amount=one.getDouble(3);
                     LinearLayout r=row();r.setPadding(0,dp(10),0,dp(10));LinearLayout details=col();
