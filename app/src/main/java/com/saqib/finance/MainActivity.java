@@ -170,13 +170,26 @@ public class MainActivity extends FragmentActivity {
         Cursor ec=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date,item FROM expenses ORDER BY date DESC,id DESC LIMIT 30",null);if(!ec.moveToFirst())expenseCard.addView(txt("No expenses recorded yet.",13,muted,false));else do{String cat=ec.getString(0),desc=ec.getString(1),date=ec.getString(3),item=ec.getString(4);LinearLayout r=row();r.setPadding(0,dp(9),0,dp(9));LinearLayout details=col();details.addView(txt(cat+(item==null||item.isEmpty()?"":" · "+item),13,ink,true));details.addView(txt(dateLabel(date)+(desc==null||desc.isEmpty()||desc.equals(item)?"":" · "+desc),11,muted,false));r.addView(details,new LinearLayout.LayoutParams(0,-2,1));r.addView(txt("-"+money(ec.getDouble(2)),13,0xFFB36A45,true));expenseCard.addView(r);View sep=new View(this);sep.setBackgroundColor(line);expenseCard.addView(sep,lp(-1,1));}while(ec.moveToNext());ec.close();
     }
     private void showAddIncomeDialog(){
-        LinearLayout box=col();box.setPadding(dp(4),dp(4),dp(4),0);EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Amount received (PKR)");box.addView(amount,lp(-1,50));
-        EditText source=new EditText(this);source.setSingleLine(true);source.setHint("Received from (e.g. Salary, client, family)");box.addView(source,lp(-1,50));
-        TextView date=txt(display.format(new Date()),14,ink,true);date.setPadding(dp(12),dp(13),dp(12),dp(13));date.setBackground(shape(bg,10));box.addView(date,lp(-1,48));date.setOnClickListener(v->pickDate(date));
-        EditText note=new EditText(this);note.setSingleLine(true);note.setHint("Note (optional)");box.addView(note,lp(-1,50));
+        LinearLayout box=col();box.setPadding(dp(5),dp(5),dp(5),0);
+        TextView prompt=txt("SELECT MONEY TYPE",11,muted,true);box.addView(prompt);
+        String[] types={"Salary","Advance","Gift","Borrow","New"};String[] icons={"💼","💵","🎁","🤝","+"};
+        final String[] selectedSource={""};final String[] selectedIcon={""};LinearLayout choices=col();box.addView(choices);
+        for(int rowIndex=0;rowIndex<3;rowIndex++){LinearLayout r=row();LinearLayout.LayoutParams rp=lp(-1,72);rp.topMargin=dp(5);choices.addView(r,rp);
+            for(int colIndex=0;colIndex<2;colIndex++){int index=rowIndex*2+colIndex;if(index>=types.length)continue;final int ix=index;
+                LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setBackground(shape(surface,12));tile.setElevation(dp(1));LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,-1,1);if(colIndex>0)tp.leftMargin=dp(6);r.addView(tile,tp);
+                TextView symbol=txt(icons[ix],22,ink,true);symbol.setGravity(Gravity.CENTER);tile.addView(symbol);TextView label=txt(types[ix],11,ink,true);label.setGravity(Gravity.CENTER);tile.addView(label);
+                tile.setOnClickListener(v->{if(ix==4){LinearLayout custom=col();custom.setPadding(dp(4),dp(4),dp(4),0);EditText customName=new EditText(this);customName.setSingleLine(true);customName.setHint("Enter source name");custom.addView(customName,lp(-1,50));TextView iconPreview=txt("💰",30,ink,true);iconPreview.setGravity(Gravity.CENTER);custom.addView(iconPreview,lp(-1,48));final String[] customIcon={"💰"};Button pick=smallFilter("Choose icon");custom.addView(pick,lp(-1,40));pick.setOnClickListener(w->showItemIconPicker(customIcon,iconPreview,new boolean[]{false}));
+                    new AlertDialog.Builder(this).setTitle("New Money Type").setView(custom).setNegativeButton("Cancel",null).setPositiveButton("Continue",(d,w)->{String n=customName.getText().toString().trim();if(n.isEmpty()){Toast.makeText(this,"Enter a name",Toast.LENGTH_SHORT).show();return;}selectedSource[0]=n;selectedIcon[0]=customIcon[0];getPreferences(0).edit().putString("income_icon_"+n,customIcon[0]).apply();prompt.setText(customIcon[0]+"  "+n+" selected");}).show();
+                }else{selectedSource[0]=types[ix];selectedIcon[0]=icons[ix];prompt.setText(icons[ix]+"  "+types[ix]+" selected");}});
+            }}
+        EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Amount received (PKR)");box.addView(amount,lp(-1,50));
+        EditText source=new EditText(this);source.setSingleLine(true);source.setHint("Other source (optional)");box.addView(source,lp(-1,48));
+        TextView date=txt(display.format(new Date()),14,ink,true);date.setPadding(dp(12),dp(13),dp(12),dp(13));date.setBackground(shape(bg,10));box.addView(date,lp(-1,46));date.setOnClickListener(v->pickDate(date));
+        EditText note=new EditText(this);note.setSingleLine(true);note.setHint("Note (optional)");box.addView(note,lp(-1,48));
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Add Money In").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();
-        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{try{double value=Double.parseDouble(amount.getText().toString().trim());if(value<=0||Double.isInfinite(value)||Double.isNaN(value))throw new Exception();String from=source.getText().toString().trim();if(from.isEmpty()){source.setError("Enter who or where money came from");return;}Date dt=display.parse(date.getText().toString());ContentValues cv=new ContentValues();cv.put("amount",value);cv.put("source",from);cv.put("date",iso.format(dt));cv.put("note",note.getText().toString().trim());long id=db.getWritableDatabase().insert("incomes",null,cv);if(id<=0)throw new Exception();pushIncome(id);dialog.dismiss();Toast.makeText(this,"Money received saved",Toast.LENGTH_SHORT).show();showPage(6);}catch(Exception e){amount.setError("Enter a valid amount");}}));dialog.show();
+        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{try{double value=Double.parseDouble(amount.getText().toString().trim());if(value<=0||Double.isInfinite(value)||Double.isNaN(value))throw new Exception();String from=source.getText().toString().trim();if(from.isEmpty())from=selectedSource[0];if(from.isEmpty()){Toast.makeText(this,"Select Salary, Advance, Gift, Borrow or New",Toast.LENGTH_SHORT).show();return;}if(!selectedIcon[0].isEmpty())getPreferences(0).edit().putString("income_icon_"+from,selectedIcon[0]).apply();Date dt=display.parse(date.getText().toString());ContentValues cv=new ContentValues();cv.put("amount",value);cv.put("source",from);cv.put("date",iso.format(dt));cv.put("note",note.getText().toString().trim());long id=db.getWritableDatabase().insert("incomes",null,cv);if(id<=0)throw new Exception();pushIncome(id);dialog.dismiss();Toast.makeText(this,"Money received saved",Toast.LENGTH_SHORT).show();showPage(6);}catch(Exception e){amount.setError("Enter a valid amount");}}));dialog.show();
     }
+
     private void editIncome(long id,double value,String sourceValue,String dateValue,String noteValue){
         LinearLayout box=col();EditText amount=new EditText(this);amount.setInputType(8194);amount.setText(String.valueOf(value));box.addView(amount);EditText source=new EditText(this);source.setText(sourceValue);source.setHint("Received from");box.addView(source);
         TextView date=txt(dateLabel(dateValue),14,ink,true);date.setPadding(dp(10),dp(12),dp(10),dp(12));date.setOnClickListener(v->pickDate(date));box.addView(date);EditText note=new EditText(this);note.setText(noteValue==null?"":noteValue);note.setHint("Note (optional)");box.addView(note);
@@ -216,7 +229,7 @@ public class MainActivity extends FragmentActivity {
                     final long id=ids.get(j);final String name=names.get(j),ic=icons.get(j);
                     LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(8),dp(12),dp(8),dp(12));tile.setBackground(shape(MINT,14));
                     LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,dp(92),1);if(j>i)tp.leftMargin=dp(8);gridRow.addView(tile,tp);
-                    addItemIcon(tile,ic==null?"📦":ic,25,lp(-1,36));
+                    addItemIcon(tile,(ic==null||ic.trim().isEmpty())?"📦":ic,25,lp(-1,36));
                     TextView label=txt(name,13,ink,true);label.setGravity(Gravity.CENTER);label.setMaxLines(2);tile.addView(label);
                     tile.setOnClickListener(v->{selectedAddCategory=cat;addDraftItem(cat,name);});
                     tile.setOnLongClickListener(v->{showItemOptionsDialog(id,name,cat);return true;});
@@ -233,7 +246,7 @@ public class MainActivity extends FragmentActivity {
             for(int i=0;i<ids.size();i++){
                 final long id=ids.get(i);final String name=names.get(i),ic=icons.get(i);
                 LinearLayout r=row();r.setPadding(dp(5),dp(9),dp(5),dp(9));
-                addItemIcon(r,ic==null?"📦":ic,22,lp(38,38));
+                addItemIcon(r,(ic==null||ic.trim().isEmpty())?"📦":ic,22,lp(38,38));
                 r.addView(txt(name,14,ink,true),new LinearLayout.LayoutParams(0,-2,1));
                 r.addView(txt("›",24,GREEN,true));
                 r.setOnClickListener(v->{selectedAddCategory=cat;addDraftItem(cat,name);});
