@@ -84,7 +84,7 @@ public class MainActivity extends FragmentActivity {
     private void palette(){bg=dark?0xFF101827:0xFFF4F7FC;surface=dark?0xFF1B2638:0xFFFFFFFF;ink=dark?0xFFF1F5FC:0xFF1C2B45;muted=dark?0xFFAFBDD1:0xFF718096;line=dark?0xFF34445D:0xFFE4EAF3;getWindow().setStatusBarColor(DEEP);getWindow().setNavigationBarColor(DEEP);}
     private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
     private GradientDrawable shape(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
-    private TextView txt(String s,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);if(bold)t.setTypeface(null,1);return t;}
+    private TextView txt(String s,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(Math.max(9f,size*0.94f));t.setTextColor(color);if(bold)t.setTypeface(null,1);return t;}
     private LinearLayout col(){LinearLayout l=new LinearLayout(this);l.setOrientation(1);return l;}
     private LinearLayout row(){LinearLayout l=new LinearLayout(this);l.setOrientation(0);l.setGravity(Gravity.CENTER_VERTICAL);return l;}
     private LinearLayout.LayoutParams lp(int w,int h){return new LinearLayout.LayoutParams(w<0?w:dp(w),h<0?h:dp(h));}
@@ -93,8 +93,8 @@ public class MainActivity extends FragmentActivity {
     private void buildShell(){
         root=col();root.setBackgroundColor(bg);setContentView(root);
         FrameLayout frame=new FrameLayout(this);root.addView(frame,new LinearLayout.LayoutParams(-1,0,1));
-        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);body=col();body.setPadding(0,0,0,dp(22));scroll.addView(body);frame.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
-        nav=row();nav.setBackgroundColor(DEEP);nav.setPadding(dp(5),dp(8),dp(5),dp(8));root.addView(nav,lp(-1,66));
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);body=col();body.setPadding(0,0,0,dp(16));scroll.addView(body);frame.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
+        nav=row();nav.setBackgroundColor(DEEP);nav.setPadding(dp(5),dp(6),dp(5),dp(6));root.addView(nav,lp(-1,60));
     }
     private void showPage(int p){
         page=p;body.removeAllViews();nav.removeAllViews();body.setBackgroundColor(bg);
@@ -102,9 +102,9 @@ public class MainActivity extends FragmentActivity {
         String[] labels={"Home","Drafts","History","Settings","Reminders"};String[] icons={"⌂","+","▤","⚙","◷"};
         for(int i=0;i<5;i++){final int index=i;LinearLayout item=col();item.setGravity(Gravity.CENTER);boolean active=(i==p)||(p==5&&i==1);TextView ic=txt(icons[i],22,active?GOLD:0xFFD0DED5,true);ic.setGravity(Gravity.CENTER);TextView label=txt(labels[i],10,active?Color.WHITE:0xFFB5C8BD,active);label.setGravity(Gravity.CENTER);item.addView(ic);item.addView(label);item.setOnClickListener(v->showPage(index));nav.addView(item,new LinearLayout.LayoutParams(0,-1,1));}
     }
-    private void pageHeader(String title,String sub){LinearLayout h=col();h.setPadding(dp(16),dp(34),dp(16),dp(18));GradientDrawable gd=new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xFF78A5E8,0xFF6997E2,0xFF5C89D4});gd.setCornerRadii(new float[]{0,0,0,0,dp(24),dp(24),dp(24),dp(24)});h.setBackground(gd);LinearLayout brand=row();ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.ic_launcher);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);logo.setContentDescription("Saqib Finance app icon");brand.addView(logo,lp(78,78));LinearLayout names=col();names.setGravity(Gravity.CENTER_VERTICAL);names.setPadding(dp(10),0,0,0);TextView brandName=txt("Saqib Finance",27,Color.WHITE,true);brandName.setSingleLine(true);brandName.setIncludeFontPadding(false);names.addView(brandName);TextView brandTagline=txt("Track · Manage · Save",12,0xFFDCE9FF,true);brandTagline.setPadding(0,dp(5),0,0);names.addView(brandTagline);brand.addView(names,new LinearLayout.LayoutParams(0,-2,1));h.addView(brand,lp(-1,78));TextView gear=txt("⚙",28,Color.WHITE,true);gear.setGravity(Gravity.CENTER);gear.setOnClickListener(v->showPage(3));brand.addView(gear,lp(42,52));if(!title.equals("Home")){TextView titleView=txt(title,19,Color.WHITE,true);titleView.setPadding(0,dp(12),0,dp(2));h.addView(titleView);h.addView(txt(sub,11,0xFFDCE9FF,false));}body.addView(h);}
-    private LinearLayout content(){LinearLayout c=col();c.setPadding(dp(17),dp(17),dp(17),0);body.addView(c);return c;}
-    private LinearLayout card(LinearLayout parent){LinearLayout c=col();c.setPadding(dp(16),dp(15),dp(16),dp(15));c.setBackground(shape(surface,18));c.setElevation(dp(2));LinearLayout.LayoutParams q=lp(-1,-2);q.bottomMargin=dp(13);parent.addView(c,q);return c;}
+    private void pageHeader(String title,String sub){LinearLayout h=col();h.setPadding(dp(14),dp(25),dp(14),dp(13));GradientDrawable gd=new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,new int[]{0xFF78A5E8,0xFF6997E2,0xFF5C89D4});gd.setCornerRadii(new float[]{0,0,0,0,dp(24),dp(24),dp(24),dp(24)});h.setBackground(gd);LinearLayout brand=row();ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.ic_launcher);logo.setScaleType(ImageView.ScaleType.FIT_CENTER);logo.setContentDescription("Saqib Finance app icon");brand.addView(logo,lp(64,64));LinearLayout names=col();names.setGravity(Gravity.CENTER_VERTICAL);names.setPadding(dp(10),0,0,0);TextView brandName=txt("Saqib Finance",23,Color.WHITE,true);brandName.setSingleLine(true);brandName.setIncludeFontPadding(false);names.addView(brandName);TextView brandTagline=txt("Track · Manage · Save",12,0xFFDCE9FF,true);brandTagline.setPadding(0,dp(5),0,0);names.addView(brandTagline);brand.addView(names,new LinearLayout.LayoutParams(0,-2,1));h.addView(brand,lp(-1,64));TextView gear=txt("⚙",25,Color.WHITE,true);gear.setGravity(Gravity.CENTER);gear.setOnClickListener(v->showPage(3));brand.addView(gear,lp(42,52));if(!title.equals("Home")){TextView titleView=txt(title,17,Color.WHITE,true);titleView.setPadding(0,dp(12),0,dp(2));h.addView(titleView);h.addView(txt(sub,11,0xFFDCE9FF,false));}body.addView(h);}
+    private LinearLayout content(){LinearLayout c=col();c.setPadding(dp(14),dp(13),dp(14),0);body.addView(c);return c;}
+    private LinearLayout card(LinearLayout parent){LinearLayout c=col();c.setPadding(dp(13),dp(12),dp(13),dp(12));c.setBackground(shape(surface,18));c.setElevation(dp(2));LinearLayout.LayoutParams q=lp(-1,-2);q.bottomMargin=dp(13);parent.addView(c,q);return c;}
     private void homePage(){
         pageHeader("Home","Track · Manage · Save");
         LinearLayout c=content();
@@ -115,7 +115,7 @@ public class MainActivity extends FragmentActivity {
         LinearLayout.LayoutParams mr=lp(-1,-2);mr.bottomMargin=dp(10);c.addView(monthRow,mr);
         prev.setOnClickListener(v->{month.add(Calendar.MONTH,-1);showPage(0);});next.setOnClickListener(v->{month.add(Calendar.MONTH,1);showPage(0);});
         LinearLayout totals=row();LinearLayout.LayoutParams tlp=lp(-1,-2);tlp.bottomMargin=dp(13);c.addView(totals,tlp);
-        LinearLayout spent=col();spent.setPadding(dp(13),dp(13),dp(10),dp(13));spent.setBackground(shape(surface,18));spent.setElevation(dp(3));LinearLayout.LayoutParams slp=new LinearLayout.LayoutParams(0,dp(94),1);slp.rightMargin=dp(6);totals.addView(spent,slp);
+        LinearLayout spent=col();spent.setPadding(dp(13),dp(13),dp(10),dp(13));spent.setBackground(shape(surface,18));spent.setElevation(dp(3));LinearLayout.LayoutParams slp=new LinearLayout.LayoutParams(0,dp(84),1);slp.rightMargin=dp(6);totals.addView(spent,slp);
         LinearLayout spentTop=row();spentTop.addView(txt("👛",23,GREEN,true));TextView spentLabel=txt("Total Expenses",12,ink,true);spentLabel.setPadding(dp(7),0,0,0);spentTop.addView(spentLabel);spent.addView(spentTop);
         totalText=txt("Rs. 0",20,ink,true);totalText.setPadding(dp(2),dp(5),0,0);spent.addView(totalText);
         LinearLayout balance=col();balance.setPadding(dp(13),dp(13),dp(10),dp(13));balance.setBackground(shape(surface,18));balance.setElevation(dp(3));totals.addView(balance,new LinearLayout.LayoutParams(0,dp(94),1));
@@ -134,7 +134,7 @@ public class MainActivity extends FragmentActivity {
         String[] icons={"🧒","💍","👨‍👩‍👧","🧴","💊","🛒","🏍️","🧾","🛍️","🍽️","📦"};
         int[] tints={0xFFB8D9F8,0xFFF4B8D4,0xFFFFD99A,0xFFF4D7B5,0xFFB9F0D0,0xFFDCC5F4,0xFFBDEBEA,0xFFB8D9F8,0xFFF4B8D4,0xFFC8EDB6,0xFFDCC5F4};
         ArrayList<String> visible=new ArrayList<>();for(String cat:categories)if(!hiddenCategories.contains(cat))visible.add(cat);
-        for(int i=0;i<visible.size();i+=4){LinearLayout lineRow=row();LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(8);parent.addView(lineRow,rowLp);for(int j=i;j<Math.min(i+4,visible.size());j++){final String cat=visible.get(j);final int idx=Arrays.asList(CATS).indexOf(cat);int tint=idx>=0?tints[idx]:MINT;String icon=idx>=0?icons[idx]:getPreferences(0).getString("category_icon_"+cat,"📦");if("Other".equals(cat))icon="+";LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(3),dp(8),dp(3),dp(7));tile.setBackground(shape(surface,19));GradientDrawable tileBorder=shape(surface,19);tileBorder.setStroke(dp(1),dark?0xFF344F78:0xFFD5E4FA);tile.setBackground(tileBorder);tile.setElevation(dp(2));LinearLayout.LayoutParams tileLp=new LinearLayout.LayoutParams(0,dp(83),1);if(j>i)tileLp.leftMargin=dp(5);lineRow.addView(tile,tileLp);TextView symbol=txt(icon,25,ink,true);symbol.setGravity(Gravity.CENTER);tile.addView(symbol,lp(-1,39));TextView label=txt(cat,11,ink,true);label.setGravity(Gravity.CENTER);label.setSingleLine(true);label.setPadding(0,dp(3),0,0);tile.addView(label);tile.setOnClickListener(v->{if("Other".equals(cat)){showNewCategoryDialog();}else{selectedAddCategory=cat;showPage(5);}});tile.setOnLongClickListener(v->{categoryOptions(cat);return true;});}}
+        for(int i=0;i<visible.size();i+=4){LinearLayout lineRow=row();LinearLayout.LayoutParams rowLp=lp(-1,-2);rowLp.bottomMargin=dp(8);parent.addView(lineRow,rowLp);for(int j=i;j<Math.min(i+4,visible.size());j++){final String cat=visible.get(j);final int idx=Arrays.asList(CATS).indexOf(cat);int tint=idx>=0?tints[idx]:MINT;String icon=idx>=0?icons[idx]:getPreferences(0).getString("category_icon_"+cat,"📦");if("Other".equals(cat))icon="+";LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(3),dp(8),dp(3),dp(7));tile.setBackground(shape(surface,19));GradientDrawable tileBorder=shape(surface,19);tileBorder.setStroke(dp(1),dark?0xFF344F78:0xFFD5E4FA);tile.setBackground(tileBorder);tile.setElevation(dp(2));LinearLayout.LayoutParams tileLp=new LinearLayout.LayoutParams(0,dp(76),1);if(j>i)tileLp.leftMargin=dp(5);lineRow.addView(tile,tileLp);TextView symbol=txt(icon,22,ink,true);symbol.setGravity(Gravity.CENTER);tile.addView(symbol,lp(-1,35));TextView label=txt(cat,10,ink,true);label.setGravity(Gravity.CENTER);label.setSingleLine(true);label.setPadding(0,dp(3),0,0);tile.addView(label);tile.setOnClickListener(v->{if("Other".equals(cat)){showNewCategoryDialog();}else{selectedAddCategory=cat;showPage(5);}});tile.setOnLongClickListener(v->{categoryOptions(cat);return true;});}}
     }
     private void showNewCategoryDialog(){
         LinearLayout box=col();box.setPadding(dp(8),dp(4),dp(8),0);
@@ -215,8 +215,8 @@ public class MainActivity extends FragmentActivity {
                 for(int j=i;j<Math.min(i+2,ids.size());j++){
                     final long id=ids.get(j);final String name=names.get(j),ic=icons.get(j);
                     LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(8),dp(12),dp(8),dp(12));tile.setBackground(shape(MINT,14));
-                    LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,dp(104),1);if(j>i)tp.leftMargin=dp(8);gridRow.addView(tile,tp);
-                    addItemIcon(tile,ic==null?"📦":ic,28,lp(-1,40));
+                    LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,dp(92),1);if(j>i)tp.leftMargin=dp(8);gridRow.addView(tile,tp);
+                    addItemIcon(tile,ic==null?"📦":ic,25,lp(-1,36));
                     TextView label=txt(name,13,ink,true);label.setGravity(Gravity.CENTER);label.setMaxLines(2);tile.addView(label);
                     tile.setOnClickListener(v->{selectedAddCategory=cat;addDraftItem(cat,name);});
                     tile.setOnLongClickListener(v->{showItemOptionsDialog(id,name,cat);return true;});
@@ -233,7 +233,7 @@ public class MainActivity extends FragmentActivity {
             for(int i=0;i<ids.size();i++){
                 final long id=ids.get(i);final String name=names.get(i),ic=icons.get(i);
                 LinearLayout r=row();r.setPadding(dp(5),dp(9),dp(5),dp(9));
-                addItemIcon(r,ic==null?"📦":ic,24,lp(42,42));
+                addItemIcon(r,ic==null?"📦":ic,22,lp(38,38));
                 r.addView(txt(name,14,ink,true),new LinearLayout.LayoutParams(0,-2,1));
                 r.addView(txt("›",24,GREEN,true));
                 r.setOnClickListener(v->{selectedAddCategory=cat;addDraftItem(cat,name);});
