@@ -1043,7 +1043,12 @@ public class MainActivity extends FragmentActivity {
         });});dialog.show();
     }
     private static class DB extends SQLiteOpenHelper{
-        DB(Context c){super(c,"saqib_finance.db",null,8);}
+        DB(Context c){super(c,"saqib_finance.db",null,7);}
+        public void onOpen(SQLiteDatabase d){
+            super.onOpen(d);boolean hasGroup=false;Cursor c=d.rawQuery("PRAGMA table_info(expenses)",null);
+            while(c.moveToNext())if("group_id".equals(c.getString(1)))hasGroup=true;c.close();
+            if(!hasGroup)d.execSQL("ALTER TABLE expenses ADD COLUMN group_id TEXT");
+        }
         public void onCreate(SQLiteDatabase d){
             d.execSQL("CREATE TABLE expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,category TEXT NOT NULL,description TEXT NOT NULL,amount REAL NOT NULL,date TEXT NOT NULL,item TEXT,group_id TEXT)");
             d.execSQL("CREATE TABLE incomes(id INTEGER PRIMARY KEY AUTOINCREMENT,amount REAL NOT NULL,source TEXT NOT NULL,date TEXT NOT NULL,note TEXT NOT NULL DEFAULT '')");
@@ -1057,7 +1062,6 @@ public class MainActivity extends FragmentActivity {
             if(o<5){d.execSQL("ALTER TABLE expenses ADD COLUMN item TEXT");d.execSQL("UPDATE expenses SET item=(SELECT name FROM category_items WHERE category_items.category=expenses.category AND category_items.name=expenses.description LIMIT 1) WHERE item IS NULL");}
             if(o<6)d.execSQL("CREATE TABLE IF NOT EXISTS incomes(id INTEGER PRIMARY KEY AUTOINCREMENT,amount REAL NOT NULL,source TEXT NOT NULL,date TEXT NOT NULL,note TEXT NOT NULL DEFAULT '')");
             if(o<7)d.execSQL("ALTER TABLE reminders ADD COLUMN category TEXT NOT NULL DEFAULT 'Other'");
-            if(o<8)d.execSQL("ALTER TABLE expenses ADD COLUMN group_id TEXT");
         }
     }
 }
