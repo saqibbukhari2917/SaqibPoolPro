@@ -544,7 +544,7 @@ public class MainActivity extends FragmentActivity {
         LinearLayout retention=card(c);
         retention.addView(txt("DATA & RECORD HISTORY",10,GOLD,true));
         retention.addView(txt("Choose how long to keep your records",17,ink,true));
-        retention.addView(txt("Select when old expenses and completed reminders should be removed automatically. Choose Off to keep all records. Upcoming reminders and saved item categories are never removed by this setting.",12,muted,false));
+        retention.addView(txt("Select when old money-in records, expenses and completed reminders should be removed automatically. Choose Off to keep all financial records. Upcoming reminders and saved item categories are never removed by this setting.",12,muted,false));
         retention.addView(txt("AUTO-DELETE AFTER",11,muted,true));
         Spinner retentionSpinner=new Spinner(this);
         String[] retentionOptions={"Off — Keep all records","1 month","3 months","6 months","12 months"};
