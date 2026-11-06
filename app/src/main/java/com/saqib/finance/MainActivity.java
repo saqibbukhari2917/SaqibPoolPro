@@ -35,7 +35,7 @@ public class MainActivity extends FragmentActivity {
     private boolean cloudSyncInProgress=false;
     private static final String[] CATS={"Kids","Wife","Family","Personal","Medicine","Grocery","Transport","Bills","Shopping","Dining","Other"};
     private static final int GREEN=0xFF2463D9, DEEP=0xFF174A9C, GOLD=0xFF5B8FE8, MINT=0xFFEAF2FF;
-    private boolean categoryGridView=true; private GestureDetector swipeDetector; private DB db; private final ArrayList<String> categories=new ArrayList<>(Arrays.asList(cats())); private final HashSet<String> hiddenCategories=new HashSet<>(); private LinearLayout root,body,nav; private int page=0; private boolean dark=false;
+    private boolean categoryGridView=true; private GestureDetector swipeDetector; private DB db; private final ArrayList<String> categories=new ArrayList<>(Arrays.asList(CATS)); private final HashSet<String> hiddenCategories=new HashSet<>(); private LinearLayout root,body,nav; private int page=0; private boolean dark=false;
     private Calendar month=Calendar.getInstance(); private String from="",to="",category="All categories",selectedAddCategory="Grocery",pendingItemName="";
     private TextView totalText,countText,monthText,pendingCloudText; private LinearLayout historyList;
     private final SimpleDateFormat iso=new SimpleDateFormat("yyyy-MM-dd",Locale.US);
