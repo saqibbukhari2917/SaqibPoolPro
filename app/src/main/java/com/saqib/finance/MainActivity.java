@@ -35,7 +35,7 @@ public class MainActivity extends FragmentActivity {
     private boolean cloudSyncInProgress=false;
     private static final String[] CATS={"Kids","Wife","Family","Personal","Medicine","Grocery","Transport","Bills","Shopping","Dining","Other"};
     private static final int GREEN=0xFF2463D9, DEEP=0xFF174A9C, GOLD=0xFF5B8FE8, MINT=0xFFEAF2FF;
-    private boolean categoryGridView=true; private DB db; private LinearLayout root,body,nav; private ScrollView pageScroll; private int page=0; private boolean dark=false;
+    private boolean categoryGridView=true; private DB db; private LinearLayout root,body,nav; private ScrollView pageScroll; private GestureDetector swipeDetector; private int page=0; private boolean dark=false;
     private Calendar month=Calendar.getInstance(); private String from="",to="",category="All categories",selectedAddCategory="Grocery",pendingItemName="",pendingReminderCategory="Other"; private boolean reminderFlow=false;
     private TextView totalText,countText,monthText,pendingCloudText; private LinearLayout historyList;
     private final SimpleDateFormat iso=new SimpleDateFormat("yyyy-MM-dd",Locale.US);
@@ -93,9 +93,10 @@ public class MainActivity extends FragmentActivity {
     private void buildShell(){
         root=col();root.setBackgroundColor(bg);setContentView(root);
         FrameLayout frame=new FrameLayout(this);root.addView(frame,new LinearLayout.LayoutParams(-1,0,1));
-        pageScroll=new ScrollView(this);pageScroll.setFillViewport(true);pageScroll.setVerticalScrollBarEnabled(false);body=col();body.setPadding(0,0,0,dp(22));pageScroll.addView(body);frame.addView(pageScroll,new FrameLayout.LayoutParams(-1,-1));
+        pageScroll=new ScrollView(this);pageScroll.setFillViewport(true);pageScroll.setVerticalScrollBarEnabled(false);swipeDetector=new GestureDetector(this,new GestureDetector.SimpleOnGestureListener(){@Override public boolean onDown(MotionEvent e){return true;}@Override public boolean onFling(MotionEvent e1,MotionEvent e2,float velocityX,float velocityY){float dx=e2.getX()-e1.getX(),dy=e2.getY()-e1.getY();if(Math.abs(dx)>dp(80)&&Math.abs(dx)>Math.abs(dy)*1.35f&&Math.abs(velocityX)>dp(350)){int tab=currentTab();int nextTab=dx<0?Math.min(4,tab+1):Math.max(0,tab-1);if(nextTab!=tab){if(nextTab!=4)reminderFlow=false;showPage(nextTab);}return true;}return false;}});pageScroll.setOnTouchListener((v,event)->{swipeDetector.onTouchEvent(event);return false;});body=col();body.setPadding(0,0,0,dp(22));pageScroll.addView(body);frame.addView(pageScroll,new FrameLayout.LayoutParams(-1,-1));
         nav=row();nav.setBackgroundColor(DEEP);nav.setPadding(dp(5),dp(8),dp(5),dp(8));root.addView(nav,lp(-1,66));
     }
+    private int currentTab(){if(page==5)return 1;if(page>=7&&page<=9)return 4;if(page==6)return 0;return Math.max(0,Math.min(4,page));}
     private void showPage(int p){
         page=p;if(pageScroll!=null)pageScroll.scrollTo(0,0);body.removeAllViews();nav.removeAllViews();body.setBackgroundColor(bg);
         if(p==0)homePage();else if(p==1)addPage();else if(p==2)historyPage();else if(p==3)settingsPage();else if(p==4)remindersPage();else if(p==5)categoryItemsPage(selectedAddCategory);else if(p==6)balancePage();else if(p==7)reminderCategoryPage();else if(p==8)reminderItemsPage();else if(p==9)reminderDetailsPage();
