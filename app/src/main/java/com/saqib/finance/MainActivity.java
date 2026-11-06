@@ -173,7 +173,7 @@ public class MainActivity extends FragmentActivity {
                     final long id=ids.get(j);final String name=names.get(j),ic=icons.get(j);
                     LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(8),dp(12),dp(8),dp(12));tile.setBackground(shape(MINT,14));
                     LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,dp(104),1);if(j>i)tp.leftMargin=dp(8);gridRow.addView(tile,tp);
-                    TextView symbol=txt(ic==null?"📦":ic,28,ink,true);symbol.setGravity(Gravity.CENTER);tile.addView(symbol,lp(-1,40));
+                    addItemIcon(tile,ic==null?"📦":ic,28,lp(-1,40));
                     TextView label=txt(name,13,ink,true);label.setGravity(Gravity.CENTER);label.setMaxLines(2);tile.addView(label);
                     tile.setOnClickListener(v->{selectedAddCategory=cat;pendingItemName=name;showPage(1);});
                     tile.setOnLongClickListener(v->{showMoveItemDialog(id,name,cat);return true;});
@@ -190,7 +190,7 @@ public class MainActivity extends FragmentActivity {
             for(int i=0;i<ids.size();i++){
                 final long id=ids.get(i);final String name=names.get(i),ic=icons.get(i);
                 LinearLayout r=row();r.setPadding(dp(5),dp(9),dp(5),dp(9));
-                r.addView(txt(ic==null?"📦":ic,24,ink,true),lp(42,42));
+                addItemIcon(r,ic==null?"📦":ic,24,lp(42,42));
                 r.addView(txt(name,14,ink,true),new LinearLayout.LayoutParams(0,-2,1));
                 r.addView(txt("›",24,GREEN,true));
                 r.setOnClickListener(v->{selectedAddCategory=cat;pendingItemName=name;showPage(1);});
@@ -224,7 +224,7 @@ public class MainActivity extends FragmentActivity {
             public void afterTextChanged(android.text.Editable e){}
         });
         choose.setOnClickListener(v->showItemIconPicker(chosen,preview,manuallyChosen));
-        online.setOnClickListener(v->{String term=name.getText().toString().trim();String url="https://fonts.google.com/icons"+(term.isEmpty()?"":"?icon.query="+Uri.encode(term));try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)));}catch(Exception e){Toast.makeText(this,"Could not open icon catalogue",Toast.LENGTH_SHORT).show();}});
+        online.setOnClickListener(v->showOnlineIconPicker(name.getText().toString().trim(),chosen,preview,manuallyChosen));
         new AlertDialog.Builder(this).setTitle("New item · "+cat).setView(box).setNegativeButton("Cancel",null).setPositiveButton("Add",(d,w)->{
             String n=name.getText().toString().trim();
             if(n.isEmpty()){Toast.makeText(this,"Enter an item name",Toast.LENGTH_SHORT).show();return;}
@@ -235,6 +235,23 @@ public class MainActivity extends FragmentActivity {
         }).show();
     }
 
+    private void addItemIcon(LinearLayout parent,String icon,int size,LinearLayout.LayoutParams params){
+        if(icon!=null&&icon.startsWith("@iconify:")){
+            ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.FIT_CENTER);parent.addView(image,params);
+            String key=icon.substring(9);String url="https://api.iconify.design/"+key+".png?color=%23"+(dark?"F1F4F0":"245B45");
+            new Thread(()->{try{java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL(url).openConnection();c.setConnectTimeout(7000);c.setReadTimeout(7000);c.setRequestProperty("User-Agent","SaqibFinance/1.0");Bitmap bitmap=BitmapFactory.decodeStream(c.getInputStream());c.disconnect();if(bitmap!=null)runOnUiThread(()->image.setImageBitmap(bitmap));}catch(Exception ignored){} }).start();
+        }else{TextView t=txt(icon==null?"📦":icon,size,ink,true);t.setGravity(Gravity.CENTER);parent.addView(t,params);}
+    }
+    private void showOnlineIconPicker(String initial,String[] chosen,TextView preview,boolean[] manuallyChosen){
+        LinearLayout box=col();box.setPadding(dp(8),dp(8),dp(8),dp(4));
+        EditText query=new EditText(this);query.setSingleLine(true);query.setHint("Search online icons (e.g. car, home, food)");query.setText(initial);box.addView(query,lp(-1,50));
+        Button search=smallFilter("Search icons");LinearLayout.LayoutParams sp=lp(-1,42);sp.topMargin=dp(6);box.addView(search,sp);
+        TextView status=txt("Search thousands of free icons. Internet required.",11,muted,false);status.setPadding(0,dp(8),0,dp(6));box.addView(status);
+        ScrollView scroll=new ScrollView(this);LinearLayout results=col();scroll.addView(results);box.addView(scroll,new LinearLayout.LayoutParams(-1,dp(300)));
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Online icon library").setView(box).setNegativeButton("Close",null).create();
+        Runnable runSearch=()->{String term=query.getText().toString().trim();if(term.isEmpty()){query.setError("Enter an icon name");return;}status.setText("Searching…");results.removeAllViews();new Thread(()->{ArrayList<String> found=new ArrayList<>();String error=null;try{String url="https://api.iconify.design/search?query="+Uri.encode(term)+"&limit=48";java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL(url).openConnection();c.setConnectTimeout(9000);c.setReadTimeout(9000);c.setRequestProperty("User-Agent","SaqibFinance/1.0");StringBuilder b=new StringBuilder();try(BufferedReader reader=new BufferedReader(new InputStreamReader(c.getInputStream()))){String line;while((line=reader.readLine())!=null)b.append(line);}c.disconnect();JSONArray arr=new JSONObject(b.toString()).optJSONArray("icons");if(arr!=null)for(int i=0;i<arr.length();i++)found.add(arr.getString(i));}catch(Exception e){error=e.getMessage();}final String err=error;runOnUiThread(()->{results.removeAllViews();if(err!=null){status.setText("Could not load icons. Check internet and try again.");return;}status.setText(found.isEmpty()?"No icons found. Try another word.":"Tap an icon to use it. "+found.size()+" results");for(String key:found){LinearLayout item=row();item.setPadding(dp(6),dp(5),dp(6),dp(5));item.setBackground(shape(MINT,10));LinearLayout.LayoutParams ip=lp(-1,54);ip.bottomMargin=dp(5);results.addView(item,ip);addItemIcon(item,"@iconify:"+key,26,lp(42,42));TextView label=txt(key,12,ink,true);item.addView(label,new LinearLayout.LayoutParams(0,-2,1));item.setOnClickListener(v->{chosen[0]="@iconify:"+key;manuallyChosen[0]=true;preview.setText("🌐");dialog.dismiss();Toast.makeText(this,"Online icon selected",Toast.LENGTH_SHORT).show();});}});}).start();};
+        search.setOnClickListener(v->runSearch.run());dialog.setOnShowListener(v->{dialog.getWindow().setLayout(-1,dp(540));if(!initial.trim().isEmpty())runSearch.run();});dialog.show();
+    }
     private void showItemIconPicker(String[] chosen,TextView preview,boolean[] manuallyChosen){
         final String[] choices={"📦","⛽","🔧","🛞","🏍️","🚗","🧽","🅿️","🛣️","👟","👕","👗","💍","💄","🧴","🧒","🧸","📚","🎒","🥛","🥚","🍞","🍚","🫗","🧼","🍬","💊","🩺","🧪","🍽️","🎁","🏠","💡","💧","📱","💻","🧾","🛍️","✈️","🐾","⚽","🎮","🪑","🛏️","🔑","💰","❤️","⭐"};
         GridView grid=new GridView(this);grid.setNumColumns(4);grid.setVerticalSpacing(dp(6));grid.setHorizontalSpacing(dp(6));grid.setPadding(dp(8),dp(8),dp(8),dp(8));
