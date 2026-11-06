@@ -168,12 +168,25 @@ public class MainActivity extends FragmentActivity {
     }
     private void showAddIncomeDialog(){
         final String[] types={"Salary","Gift","Borrow","Other"};
+        final String[] typeIcons={"💼","🎁","🤝","💰"};
         final String[] selectedType={"Salary"};
+        final LinearLayout[] typeTiles=new LinearLayout[4];
         LinearLayout box=col();box.setPadding(dp(18),dp(8),dp(18),dp(8));
-        TextView type=txt("Type: Salary  ▾",14,ink,true);type.setPadding(dp(14),dp(14),dp(14),dp(14));type.setBackground(shape(bg,12));box.addView(type,lp(-1,52));
-        EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Amount (Rs.)");amount.setTextColor(ink);amount.setHintTextColor(muted);amount.setPadding(dp(14),dp(10),dp(14),dp(10));amount.setBackground(shape(bg,12));LinearLayout.LayoutParams amountLp=lp(-1,54);amountLp.topMargin=dp(12);box.addView(amount,amountLp);
-        View.OnClickListener chooseType=v->new AlertDialog.Builder(this).setTitle("Select Money Type").setSingleChoiceItems(types,Math.max(0,Arrays.asList(types).indexOf(selectedType[0])),(d,which)->{selectedType[0]=types[which];type.setText("Type: "+selectedType[0]+"  ▾");d.dismiss();amount.requestFocus();}).setNegativeButton("Cancel",null).show();
-        type.setOnClickListener(chooseType);amount.setOnClickListener(chooseType);
+        TextView typeHeading=txt("SELECT TYPE",12,muted,true);typeHeading.setPadding(dp(2),0,0,dp(7));box.addView(typeHeading);
+        for(int i=0;i<4;i+=2){
+            LinearLayout typeRow=row();LinearLayout.LayoutParams rowParams=lp(-1,-2);rowParams.bottomMargin=dp(7);box.addView(typeRow,rowParams);
+            for(int j=i;j<i+2;j++){
+                final int index=j;
+                LinearLayout tile=col();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(8),dp(8),dp(8),dp(7));
+                tile.setBackground(shape(types[j].equals(selectedType[0])?0xFFDCEBFF:0xFFEFF5FD,14));
+                LinearLayout.LayoutParams tileParams=new LinearLayout.LayoutParams(0,dp(76),1);if(j>i)tileParams.leftMargin=dp(7);typeRow.addView(tile,tileParams);
+                TextView icon=txt(typeIcons[j],25,ink,true);icon.setGravity(Gravity.CENTER);tile.addView(icon,lp(-1,37));
+                TextView label=txt(types[j],13,ink,true);label.setGravity(Gravity.CENTER);tile.addView(label);
+                typeTiles[j]=tile;
+                tile.setOnClickListener(v->{selectedType[0]=types[index];for(int k=0;k<4;k++)typeTiles[k].setBackground(shape(k==index?0xFFDCEBFF:0xFFEFF5FD,14));});
+            }
+        }
+        EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Amount (Rs.)");amount.setTextColor(ink);amount.setHintTextColor(muted);amount.setPadding(dp(14),dp(10),dp(14),dp(10));amount.setBackground(shape(bg,12));LinearLayout.LayoutParams amountLp=lp(-1,54);amountLp.topMargin=dp(8);box.addView(amount,amountLp);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Add Money In").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Add",null).create();
         dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{try{double value=Double.parseDouble(amount.getText().toString().trim());if(value<=0||Double.isInfinite(value)||Double.isNaN(value))throw new Exception();ContentValues cv=new ContentValues();cv.put("amount",value);cv.put("source",selectedType[0]);cv.put("date",iso.format(new Date()));cv.put("note","");long id=db.getWritableDatabase().insert("incomes",null,cv);if(id<=0)throw new Exception();pushIncome(id);dialog.dismiss();Toast.makeText(this,"Money received saved",Toast.LENGTH_SHORT).show();showPage(6);}catch(Exception e){amount.setError("Enter a valid amount");}}));dialog.show();
     }
