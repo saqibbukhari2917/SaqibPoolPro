@@ -5,10 +5,10 @@ service cloud.firestore {
     match /users/{userId}/{collection}/{documentId} {
       allow read, write: if request.auth != null
                          && request.auth.uid == userId
-                         && collection in ['expenses', 'reminders', 'categoryItems', 'adminStats'];
+                         && collection in ['expenses', 'incomes', 'reminders', 'categoryItems', 'adminStats'];
     }
 
-    // The designated admin can read account summaries only, never expenses or reminders.
+    // The designated admin can read account summaries only, never financial record contents.
     match /{path=**}/adminStats/{documentId} {
       allow read: if request.auth != null
                   && request.auth.token.email == 'saqibbukhari2917@gmail.com';

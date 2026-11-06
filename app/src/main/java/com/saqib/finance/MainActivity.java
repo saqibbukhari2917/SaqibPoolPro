@@ -96,7 +96,7 @@ public class MainActivity extends FragmentActivity {
     }
     private void showPage(int p){
         page=p;body.removeAllViews();nav.removeAllViews();body.setBackgroundColor(bg);
-        if(p==0)homePage();else if(p==1)addPage();else if(p==2)historyPage();else if(p==3)settingsPage();else if(p==4)remindersPage();else if(p==5)categoryItemsPage(selectedAddCategory);
+        if(p==0)homePage();else if(p==1)addPage();else if(p==2)historyPage();else if(p==3)settingsPage();else if(p==4)remindersPage();else if(p==5)categoryItemsPage(selectedAddCategory);else if(p==6)balancePage();
         String[] labels={"Home","Add","History","Settings","Reminders"};String[] icons={"⌂","+","▤","⚙","◷"};
         for(int i=0;i<5;i++){final int index=i;LinearLayout item=col();item.setGravity(Gravity.CENTER);boolean active=(i==p)||(p==5&&i==1);TextView ic=txt(icons[i],22,active?GOLD:0xFFD0DED5,true);ic.setGravity(Gravity.CENTER);TextView label=txt(labels[i],10,active?Color.WHITE:0xFFB5C8BD,active);label.setGravity(Gravity.CENTER);item.addView(ic);item.addView(label);item.setOnClickListener(v->showPage(index));nav.addView(item,new LinearLayout.LayoutParams(0,-1,1));}
     }
@@ -117,12 +117,15 @@ public class MainActivity extends FragmentActivity {
         LinearLayout spentTop=row();spentTop.addView(txt("👛",23,GREEN,true));TextView spentLabel=txt("Total Expenses",12,ink,true);spentLabel.setPadding(dp(7),0,0,0);spentTop.addView(spentLabel);spent.addView(spentTop);
         totalText=txt("Rs. 0",20,ink,true);totalText.setPadding(dp(2),dp(5),0,0);spent.addView(totalText);
         LinearLayout balance=col();balance.setPadding(dp(13),dp(13),dp(10),dp(13));balance.setBackground(shape(surface,18));balance.setElevation(dp(3));totals.addView(balance,new LinearLayout.LayoutParams(0,dp(94),1));
-        balance.addView(txt("🪙  Balance",12,ink,true));TextView balanceSoon=txt("Coming soon",18,GREEN,true);balanceSoon.setPadding(dp(2),dp(8),0,0);balance.addView(balanceSoon);
+        balance.addView(txt("🪙  Balance",12,ink,true));TextView balanceSoon=txt(money(getBalanceTotal()),18,GREEN,true);balanceSoon.setPadding(dp(2),dp(8),0,0);balance.addView(balanceSoon);balance.setOnClickListener(v->showPage(6));
         countText=txt("0 expenses recorded",10,muted,false);countText.setPadding(dp(2),dp(2),0,0);spent.addView(countText);updateHomeTotals();
         LinearLayout categories=col();LinearLayout.LayoutParams catLp=lp(-1,-2);catLp.bottomMargin=dp(13);c.addView(categories,catLp);
         addCategoryGrid(categories);
         LinearLayout recent=card(c);LinearLayout recentHead=row();recentHead.addView(txt("◷  Recent Expenses",16,ink,true),new LinearLayout.LayoutParams(0,-2,1));TextView all=txt("View All  →",12,GREEN,true);recentHead.addView(all);all.setOnClickListener(v->showPage(2));recent.addView(recentHead);addRecent(recent,5);
     }
+    private double getIncomeTotal(){Cursor c=db.getReadableDatabase().rawQuery("SELECT COALESCE(SUM(amount),0) FROM incomes",null);double v=0;if(c.moveToFirst())v=c.getDouble(0);c.close();return v;}
+    private double getExpenseTotal(){Cursor c=db.getReadableDatabase().rawQuery("SELECT COALESCE(SUM(amount),0) FROM expenses",null);double v=0;if(c.moveToFirst())v=c.getDouble(0);c.close();return v;}
+    private double getBalanceTotal(){return getIncomeTotal()-getExpenseTotal();}
     private void updateHomeTotals(){String key=new SimpleDateFormat("yyyy-MM",Locale.US).format(month.getTime());Cursor q=db.getReadableDatabase().rawQuery("SELECT COALESCE(SUM(amount),0),COUNT(*) FROM expenses WHERE substr(date,1,7)=?",new String[]{key});double total=0;int count=0;if(q.moveToFirst()){total=q.getDouble(0);count=q.getInt(1);}q.close();totalText.setText(money(total));countText.setText(count+" expense"+(count==1?"":"s")+" recorded");}
     private void loadMonth(Chart chart,TextView historyCount,TextView historyAmount){String key=new SimpleDateFormat("yyyy-MM",Locale.US).format(month.getTime());Map<String,Double> data=new LinkedHashMap<>();double total=0;int count=0;for(String s:CATS)data.put(s,0d);Cursor q=db.getReadableDatabase().rawQuery("SELECT category,SUM(amount),COUNT(*) FROM expenses WHERE substr(date,1,7)=? GROUP BY category",new String[]{key});while(q.moveToNext()){String cat=q.getString(0);double val=q.getDouble(1);data.put(cat,val);total+=val;count+=q.getInt(2);}q.close();totalText.setText(money(total));countText.setText(count+" expense"+(count==1?"":"s")+" recorded");historyCount.setText(count+" records");historyAmount.setText(money(total));chart.setData(data,total);}
     private void addCategoryGrid(LinearLayout parent){
@@ -142,6 +145,33 @@ public class MainActivity extends FragmentActivity {
     }
     private void addRecent(LinearLayout target,int limit){Cursor q=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date FROM expenses ORDER BY date DESC,id DESC LIMIT "+limit,null);if(!q.moveToFirst()){TextView e=txt("No expenses yet. Add your first expense.",13,muted,false);e.setPadding(0,dp(18),0,dp(12));target.addView(e);}else do{String cat=q.getString(0),desc=q.getString(1);LinearLayout r=row();TextView left=txt(cat+(desc.isEmpty()?"":" · "+desc),13,ink,true);r.addView(left,new LinearLayout.LayoutParams(0,-2,1));r.addView(txt(money(q.getDouble(2)),13,GREEN,true));target.addView(r,lp(-1,43));View d=new View(this);d.setBackgroundColor(line);target.addView(d,lp(-1,1));}while(q.moveToNext());q.close();}
 
+    private void balancePage(){
+        pageHeader("Balance","Money received and money spent");LinearLayout c=content();
+        double income=getIncomeTotal(),out=getExpenseTotal(),available=income-out;
+        LinearLayout hero=card(c);hero.setBackground(shape(DEEP,20));hero.addView(txt("AVAILABLE BALANCE",11,0xFFBDD2C4,true));hero.addView(txt(money(available),30,Color.WHITE,true));hero.addView(txt("Total money received minus total expenses",11,0xFFBDD2C4,false));
+        LinearLayout totals=row();LinearLayout.LayoutParams tr=lp(-1,-2);tr.bottomMargin=dp(13);c.addView(totals,tr);
+        LinearLayout in=col();in.setPadding(dp(13),dp(14),dp(8),dp(14));in.setBackground(shape(surface,16));LinearLayout.LayoutParams il=new LinearLayout.LayoutParams(0,dp(100),1);il.rightMargin=dp(6);totals.addView(in,il);in.addView(txt("↙  MONEY IN",11,GREEN,true));in.addView(txt(money(income),18,ink,true));
+        LinearLayout outCard=col();outCard.setPadding(dp(13),dp(14),dp(8),dp(14));outCard.setBackground(shape(surface,16));totals.addView(outCard,new LinearLayout.LayoutParams(0,dp(100),1));outCard.addView(txt("↗  MONEY OUT",11,0xFFB36A45,true));outCard.addView(txt(money(out),18,ink,true));
+        Button add=primaryButton("+  Add Money In");LinearLayout.LayoutParams addLp=lp(-1,50);addLp.bottomMargin=dp(13);c.addView(add,addLp);add.setOnClickListener(v->showAddIncomeDialog());
+        LinearLayout incomeCard=card(c);incomeCard.addView(txt("MONEY IN HISTORY",12,GOLD,true));Cursor ic=db.getReadableDatabase().rawQuery("SELECT id,amount,source,date,note FROM incomes ORDER BY date DESC,id DESC",null);
+        if(!ic.moveToFirst())incomeCard.addView(txt("No money received yet. Tap Add Money In to record it.",13,muted,false));else do{long id=ic.getLong(0);double amount=ic.getDouble(1);String source=ic.getString(2),date=ic.getString(3),note=ic.getString(4);LinearLayout r=row();r.setPadding(0,dp(10),0,dp(10));LinearLayout details=col();details.addView(txt(source,14,ink,true));details.addView(txt(dateLabel(date)+(note==null||note.trim().isEmpty()?"":" · "+note),11,muted,false));r.addView(details,new LinearLayout.LayoutParams(0,-2,1));r.addView(txt("+"+money(amount),13,GREEN,true));r.setOnClickListener(v->editIncome(id,amount,source,date,note));incomeCard.addView(r);View sep=new View(this);sep.setBackgroundColor(line);incomeCard.addView(sep,lp(-1,1));}while(ic.moveToNext());ic.close();
+        LinearLayout expenseCard=card(c);LinearLayout expenseHead=row();expenseHead.addView(txt("MONEY OUT · EXPENSES",12,GOLD,true),new LinearLayout.LayoutParams(0,-2,1));TextView view=txt("View all →",12,GREEN,true);expenseHead.addView(view);view.setOnClickListener(v->showPage(2));expenseCard.addView(expenseHead);
+        Cursor ec=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date,item FROM expenses ORDER BY date DESC,id DESC LIMIT 30",null);if(!ec.moveToFirst())expenseCard.addView(txt("No expenses recorded yet.",13,muted,false));else do{String cat=ec.getString(0),desc=ec.getString(1),date=ec.getString(3),item=ec.getString(4);LinearLayout r=row();r.setPadding(0,dp(9),0,dp(9));LinearLayout details=col();details.addView(txt(cat+(item==null||item.isEmpty()?"":" · "+item),13,ink,true));details.addView(txt(dateLabel(date)+(desc==null||desc.isEmpty()||desc.equals(item)?"":" · "+desc),11,muted,false));r.addView(details,new LinearLayout.LayoutParams(0,-2,1));r.addView(txt("-"+money(ec.getDouble(2)),13,0xFFB36A45,true));expenseCard.addView(r);View sep=new View(this);sep.setBackgroundColor(line);expenseCard.addView(sep,lp(-1,1));}while(ec.moveToNext());ec.close();
+    }
+    private void showAddIncomeDialog(){
+        LinearLayout box=col();box.setPadding(dp(4),dp(4),dp(4),0);EditText amount=new EditText(this);amount.setSingleLine(true);amount.setInputType(8194);amount.setHint("Amount received (PKR)");box.addView(amount,lp(-1,50));
+        EditText source=new EditText(this);source.setSingleLine(true);source.setHint("Received from (e.g. Salary, client, family)");box.addView(source,lp(-1,50));
+        TextView date=txt(display.format(new Date()),14,ink,true);date.setPadding(dp(12),dp(13),dp(12),dp(13));date.setBackground(shape(bg,10));box.addView(date,lp(-1,48));date.setOnClickListener(v->pickDate(date));
+        EditText note=new EditText(this);note.setSingleLine(true);note.setHint("Note (optional)");box.addView(note,lp(-1,50));
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Add Money In").setView(box).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();
+        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{try{double value=Double.parseDouble(amount.getText().toString().trim());if(value<=0||Double.isInfinite(value)||Double.isNaN(value))throw new Exception();String from=source.getText().toString().trim();if(from.isEmpty()){source.setError("Enter who or where money came from");return;}Date dt=display.parse(date.getText().toString());ContentValues cv=new ContentValues();cv.put("amount",value);cv.put("source",from);cv.put("date",iso.format(dt));cv.put("note",note.getText().toString().trim());long id=db.getWritableDatabase().insert("incomes",null,cv);if(id<=0)throw new Exception();pushIncome(id);dialog.dismiss();Toast.makeText(this,"Money received saved",Toast.LENGTH_SHORT).show();showPage(6);}catch(Exception e){amount.setError("Enter a valid amount");}}));dialog.show();
+    }
+    private void editIncome(long id,double value,String sourceValue,String dateValue,String noteValue){
+        LinearLayout box=col();EditText amount=new EditText(this);amount.setInputType(8194);amount.setText(String.valueOf(value));box.addView(amount);EditText source=new EditText(this);source.setText(sourceValue);source.setHint("Received from");box.addView(source);
+        TextView date=txt(dateLabel(dateValue),14,ink,true);date.setPadding(dp(10),dp(12),dp(10),dp(12));date.setOnClickListener(v->pickDate(date));box.addView(date);EditText note=new EditText(this);note.setText(noteValue==null?"":noteValue);note.setHint("Note (optional)");box.addView(note);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Edit money in").setView(box).setNegativeButton("Cancel",null).setNeutralButton("Delete",(d,w)->new AlertDialog.Builder(this).setMessage("Delete this money-in record?").setNegativeButton("Cancel",null).setPositiveButton("Delete",(x,y)->{db.getWritableDatabase().delete("incomes","id=?",new String[]{String.valueOf(id)});deleteCloudRecord("incomes",id);showPage(6);}).show()).setPositiveButton("Save",null).create();
+        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{try{double n=Double.parseDouble(amount.getText().toString().trim());String from=source.getText().toString().trim();Date dt=display.parse(date.getText().toString());if(n<=0||from.isEmpty())throw new Exception();ContentValues cv=new ContentValues();cv.put("amount",n);cv.put("source",from);cv.put("date",iso.format(dt));cv.put("note",note.getText().toString().trim());db.getWritableDatabase().update("incomes",cv,"id=?",new String[]{String.valueOf(id)});pushIncome(id);dialog.dismiss();showPage(6);}catch(Exception e){amount.setError("Enter a valid amount and source");}}));dialog.show();
+    }
     private void categoryItemsPage(String cat){
         pageHeader(cat,"Choose an item or add your own");
         LinearLayout c=content();
@@ -514,7 +544,7 @@ public class MainActivity extends FragmentActivity {
         LinearLayout retention=card(c);
         retention.addView(txt("DATA & RECORD HISTORY",10,GOLD,true));
         retention.addView(txt("Choose how long to keep your records",17,ink,true));
-        retention.addView(txt("Select when old expenses and completed reminders should be removed automatically. Choose Off to keep all records. Upcoming reminders and saved item categories are never removed by this setting.",12,muted,false));
+        retention.addView(txt("Select when old money-in records, expenses and completed reminders should be removed automatically. Choose Off to keep all financial records. Upcoming reminders and saved item categories are never removed by this setting.",12,muted,false));
         retention.addView(txt("AUTO-DELETE AFTER",11,muted,true));
         Spinner retentionSpinner=new Spinner(this);
         String[] retentionOptions={"Off — Keep all records","1 month","3 months","6 months","12 months"};
@@ -570,7 +600,7 @@ public class MainActivity extends FragmentActivity {
              .addOnFailureListener(e->{cloudSyncInProgress=false;refreshPendingCloudText();Toast.makeText(this,"Cloud sync could not start: "+e.getMessage(),Toast.LENGTH_LONG).show();});
      }
      private void processPendingCloudDeletes(ArrayList<String> pending,int index){
-         while(index<pending.size()&&!pending.get(index).startsWith("delete-expenses:")&&!pending.get(index).startsWith("delete-reminders:")&&!pending.get(index).startsWith("delete-categoryItems:"))index++;
+         while(index<pending.size()&&!pending.get(index).startsWith("delete-expenses:")&&!pending.get(index).startsWith("delete-incomes:")&&!pending.get(index).startsWith("delete-reminders:")&&!pending.get(index).startsWith("delete-categoryItems:"))index++;
          if(index>=pending.size()){restoreCloudRecords();return;}
          String entry=pending.get(index);int split=entry.indexOf(':');String operation=entry.substring(0,split),id=entry.substring(split+1);
          String collection=operation.substring("delete-".length());
@@ -612,23 +642,32 @@ public class MainActivity extends FragmentActivity {
          }).addOnFailureListener(e->{cloudSyncInProgress=false;Toast.makeText(this,"Cloud expense restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show();});
      }
      private void restoreCloudCategoryItems(){
-         cloudCollection("categoryItems").get().addOnSuccessListener(items->{
-             SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();
-             try{
-                 for(DocumentSnapshot d:items.getDocuments()){
-                     String cat=d.getString("category"),name=d.getString("name");
-                     if(cat==null||name==null)continue;
-                     if(Boolean.TRUE.equals(d.getBoolean("deleted"))){sql.delete("category_items","category=? AND name=?",new String[]{cat,name});continue;}
-                     String icon=d.getString("icon");if(icon==null||icon.isEmpty())icon="📦";
-                     ContentValues values=new ContentValues();values.put("icon",icon);
-                     int changed=sql.update("category_items",values,"category=? AND name=?",new String[]{cat,name});
-                     if(changed==0){values.put("category",cat);values.put("name",name);sql.insertWithOnConflict("category_items",null,values,SQLiteDatabase.CONFLICT_IGNORE);}
-                 }
-                 sql.setTransactionSuccessful();
-             }finally{sql.endTransaction();}
-             uploadAllLocal();updateAdminStats();reschedulePendingReminders();cloudSyncInProgress=false;
-             if(uiReady)showPage(page);
-         }).addOnFailureListener(e->{cloudSyncInProgress=false;Toast.makeText(this,"Cloud item restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show();});
+         cloudCollection("incomes").get().addOnSuccessListener(incomeDocs->{
+             SQLiteDatabase incomeDb=db.getWritableDatabase();incomeDb.beginTransaction();
+             try{for(DocumentSnapshot d:incomeDocs.getDocuments()){
+                 long id=d.getLong("id")==null?Long.parseLong(d.getId()):d.getLong("id");
+                 if(Boolean.TRUE.equals(d.getBoolean("deleted"))){incomeDb.delete("incomes","id=?",new String[]{String.valueOf(id)});continue;}
+                 Cursor exists=incomeDb.rawQuery("SELECT id FROM incomes WHERE id=?",new String[]{String.valueOf(id)});boolean found=exists.moveToFirst();exists.close();
+                 if(!found){ContentValues v=new ContentValues();v.put("id",id);v.put("amount",d.getDouble("amount")==null?0:d.getDouble("amount"));v.put("source",d.getString("source")==null?"":d.getString("source"));v.put("date",d.getString("date")==null?iso.format(new Date()):d.getString("date"));v.put("note",d.getString("note")==null?"":d.getString("note"));incomeDb.insert("incomes",null,v);}
+             }incomeDb.setTransactionSuccessful();}finally{incomeDb.endTransaction();}
+             cloudCollection("categoryItems").get().addOnSuccessListener(items->{
+                 SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();
+                 try{
+                     for(DocumentSnapshot d:items.getDocuments()){
+                         String cat=d.getString("category"),name=d.getString("name");
+                         if(cat==null||name==null)continue;
+                         if(Boolean.TRUE.equals(d.getBoolean("deleted"))){sql.delete("category_items","category=? AND name=?",new String[]{cat,name});continue;}
+                         String icon=d.getString("icon");if(icon==null||icon.isEmpty())icon="📦";
+                         ContentValues values=new ContentValues();values.put("icon",icon);
+                         int changed=sql.update("category_items",values,"category=? AND name=?",new String[]{cat,name});
+                         if(changed==0){values.put("category",cat);values.put("name",name);sql.insertWithOnConflict("category_items",null,values,SQLiteDatabase.CONFLICT_IGNORE);}
+                     }
+                     sql.setTransactionSuccessful();
+                 }finally{sql.endTransaction();}
+                 uploadAllLocal();updateAdminStats();reschedulePendingReminders();cloudSyncInProgress=false;
+                 if(uiReady)showPage(page);
+             }).addOnFailureListener(e->{cloudSyncInProgress=false;Toast.makeText(this,"Cloud item restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show();});
+         }).addOnFailureListener(e->{cloudSyncInProgress=false;Toast.makeText(this,"Cloud income restore failed: "+e.getMessage(),Toast.LENGTH_LONG).show();});
      }
      private int getRetentionMonths(){
         android.content.SharedPreferences p=getPreferences(0);
@@ -643,6 +682,7 @@ public class MainActivity extends FragmentActivity {
     private void cleanupOldRecords(boolean notify){cleanupOldRecords(notify,Math.max(1,getRetentionMonths()));}
     private void cleanupOldRecords(boolean notify,int months){
         String cutoff=retentionCutoff(months);
+        ArrayList<Long> incomeIds=new ArrayList<>();Cursor incomeCursor=db.getReadableDatabase().rawQuery("SELECT id FROM incomes WHERE date<?",new String[]{cutoff});while(incomeCursor.moveToNext())incomeIds.add(incomeCursor.getLong(0));incomeCursor.close();
         ArrayList<Long> expenseIds=new ArrayList<>();
         Cursor e=db.getReadableDatabase().rawQuery("SELECT id FROM expenses WHERE date<?",new String[]{cutoff});
         while(e.moveToNext())expenseIds.add(e.getLong(0));e.close();
@@ -653,13 +693,15 @@ public class MainActivity extends FragmentActivity {
         while(r.moveToNext())reminderIds.add(r.getLong(0));r.close();
         SQLiteDatabase sql=db.getWritableDatabase();sql.beginTransaction();
         try{
+            for(long id:incomeIds)sql.delete("incomes","id=?",new String[]{String.valueOf(id)});
             for(long id:expenseIds)sql.delete("expenses","id=?",new String[]{String.valueOf(id)});
             for(long id:reminderIds)sql.delete("reminders","id=?",new String[]{String.valueOf(id)});
             sql.setTransactionSuccessful();
         }finally{sql.endTransaction();}
+        for(long id:incomeIds)deleteCloudRecord("incomes",id);
         for(long id:expenseIds)deleteCloudRecord("expenses",id);
         for(long id:reminderIds)deleteCloudRecord("reminders",id);
-        if(notify)Toast.makeText(this,"Deleted "+expenseIds.size()+" old expenses and "+reminderIds.size()+" completed reminders",Toast.LENGTH_LONG).show();
+        if(notify)Toast.makeText(this,"Deleted "+incomeIds.size()+" old money-in records, "+expenseIds.size()+" old expenses and "+reminderIds.size()+" completed reminders",Toast.LENGTH_LONG).show();
         updateAdminStats();
         if(uiReady&&page==2)showPage(2);
     }
@@ -674,6 +716,9 @@ public class MainActivity extends FragmentActivity {
     }
     private void reschedulePendingReminders(){Cursor c=db.getReadableDatabase().rawQuery("SELECT id,item,trigger_at FROM reminders WHERE done=0 AND trigger_at>?",new String[]{String.valueOf(System.currentTimeMillis())});while(c.moveToNext())ReminderReceiver.schedule(this,c.getLong(0),c.getString(1),c.getLong(2));c.close();}
     private void uploadAllLocal(){
+        Cursor inc=db.getReadableDatabase().rawQuery("SELECT id,amount,source,date,note FROM incomes",null);
+        ArrayList<Map<String,Object>> incomeData=new ArrayList<>();
+        while(inc.moveToNext()){Map<String,Object> m=new HashMap<>();m.put("id",inc.getLong(0));m.put("amount",inc.getDouble(1));m.put("source",inc.getString(2));m.put("date",inc.getString(3));m.put("note",inc.getString(4));incomeData.add(m);}inc.close();
         Cursor e=db.getReadableDatabase().rawQuery("SELECT id,category,description,amount,date,item FROM expenses",null);
         ArrayList<Map<String,Object>> expenseData=new ArrayList<>();
         while(e.moveToNext()){
@@ -694,7 +739,7 @@ public class MainActivity extends FragmentActivity {
         ArrayList<Map<String,Object>> itemData=new ArrayList<>();
         while(ci.moveToNext()){Map<String,Object> m=new HashMap<>();m.put("name",ci.getString(0));m.put("category",ci.getString(1));m.put("icon",ci.getString(2));itemData.add(m);}
         ci.close();
-        final int total=expenseData.size()+reminderData.size()+itemData.size();
+        final int total=incomeData.size()+expenseData.size()+reminderData.size()+itemData.size();
         if(total==0){Toast.makeText(this,"Cloud backup complete — no records to upload",Toast.LENGTH_LONG).show();return;}
         Toast.makeText(this,"Uploading "+total+" records to cloud…",Toast.LENGTH_SHORT).show();
         final int[] completed={0};
@@ -707,6 +752,12 @@ public class MainActivity extends FragmentActivity {
                 else Toast.makeText(this,"Cloud backup complete ("+total+" records)",Toast.LENGTH_LONG).show();
             }
         };
+        for(Map<String,Object> m:incomeData){
+            String id=String.valueOf(m.get("id"));markCloudPending("incomes",id);
+            cloudCollection("incomes").document(id).set(m)
+                .addOnSuccessListener(v->{clearCloudPending("incomes",id);finishOne.run();})
+                .addOnFailureListener(err->{failed[0]=true;if(firstError[0]==null)firstError[0]=err.getMessage();finishOne.run();});
+        }
         for(Map<String,Object> m:expenseData){
             String id=String.valueOf(m.get("id"));
             markCloudPending("expenses",id);
@@ -746,12 +797,14 @@ public class MainActivity extends FragmentActivity {
             cloudCollection("categoryItems").document(key).set(tombstone).addOnSuccessListener(v->clearCloudPending(operation,key)).addOnFailureListener(e->refreshPendingCloudText());
         }
     }
+    private void pushIncome(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT amount,source,date,note FROM incomes WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("amount",c.getDouble(0));m.put("source",c.getString(1));m.put("date",c.getString(2));m.put("note",c.getString(3));c.close();String key=String.valueOf(id);markCloudPending("incomes",key);cloudCollection("incomes").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("incomes",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
     private void pushExpense(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date,item FROM expenses WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("category",c.getString(0));m.put("description",c.getString(1));m.put("amount",c.getDouble(2));m.put("date",c.getString(3));m.put("item",c.getString(4));c.close();String key=String.valueOf(id);markCloudPending("expenses",key);cloudCollection("expenses").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("expenses",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
     private void pushReminder(long id){if(FirebaseAuth.getInstance().getCurrentUser()==null)return;Cursor c=db.getReadableDatabase().rawQuery("SELECT item,trigger_at,done,estimated_amount,expense_id FROM reminders WHERE id=?",new String[]{String.valueOf(id)});if(!c.moveToFirst()){c.close();return;}Map<String,Object> m=new HashMap<>();m.put("id",id);m.put("item",c.getString(0));m.put("trigger_at",c.getLong(1));m.put("done",c.getLong(2));m.put("estimated_amount",c.getDouble(3));m.put("expense_id",c.isNull(4)?null:c.getLong(4));c.close();String key=String.valueOf(id);markCloudPending("reminders",key);cloudCollection("reminders").document(key).set(m).addOnSuccessListener(v->{clearCloudPending("reminders",key);updateAdminStats();}).addOnFailureListener(e->refreshPendingCloudText());}
     private void deleteCloudRecord(String collection,long id){String key=String.valueOf(id);String operation="delete-"+collection;markCloudPending(operation,key);if(FirebaseAuth.getInstance().getCurrentUser()!=null){Map<String,Object> tombstone=new HashMap<>();tombstone.put("id",id);tombstone.put("deleted",true);tombstone.put("deletedAt",FieldValue.serverTimestamp());cloudCollection(collection).document(key).set(tombstone).addOnSuccessListener(v->clearCloudPending(operation,key)).addOnFailureListener(e->refreshPendingCloudText());}}
     private long estimateLocalDataBytes(){
         long n=0;Cursor e=db.getReadableDatabase().rawQuery("SELECT category,description,amount,date FROM expenses",null);
         while(e.moveToNext()){for(int i=0;i<4;i++)if(!e.isNull(i))n+=String.valueOf(e.getString(i)).getBytes(java.nio.charset.StandardCharsets.UTF_8).length+8;}e.close();
+        Cursor income=db.getReadableDatabase().rawQuery("SELECT source,amount,date,note FROM incomes",null);while(income.moveToNext()){for(int i=0;i<4;i++)if(!income.isNull(i))n+=String.valueOf(income.getString(i)).getBytes(java.nio.charset.StandardCharsets.UTF_8).length+8;}income.close();
         Cursor r=db.getReadableDatabase().rawQuery("SELECT item,trigger_at,done,estimated_amount,expense_id FROM reminders",null);
         while(r.moveToNext()){for(int i=0;i<5;i++)if(!r.isNull(i))n+=String.valueOf(r.getString(i)).getBytes(java.nio.charset.StandardCharsets.UTF_8).length+8;}r.close();return n;
     }
@@ -834,5 +887,5 @@ public class MainActivity extends FragmentActivity {
             ContentValues completed=new ContentValues();completed.put("done",1);completed.put("expense_id",expenseId);db.getWritableDatabase().update("reminders",completed,"id=?",new String[]{String.valueOf(reminderId)});pushReminder(reminderId);ReminderReceiver.cancel(this,reminderId);dialog.dismiss();Toast.makeText(this,"Purchase added to expense history",Toast.LENGTH_SHORT).show();showPage(4);
         });});dialog.show();
     }
-    private static class DB extends SQLiteOpenHelper{DB(Context c){super(c,"saqib_finance.db",null,5);}public void onCreate(SQLiteDatabase d){d.execSQL("CREATE TABLE expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,category TEXT NOT NULL,description TEXT NOT NULL,amount REAL NOT NULL,date TEXT NOT NULL,item TEXT)");d.execSQL("CREATE TABLE reminders(id INTEGER PRIMARY KEY AUTOINCREMENT,item TEXT NOT NULL,trigger_at INTEGER NOT NULL,done INTEGER NOT NULL DEFAULT 0,estimated_amount REAL NOT NULL DEFAULT 0,expense_id INTEGER)");d.execSQL("CREATE TABLE category_items(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,category TEXT NOT NULL,icon TEXT NOT NULL DEFAULT '📦',UNIQUE(name,category))");}public void onUpgrade(SQLiteDatabase d,int o,int n){if(o<2)d.execSQL("CREATE TABLE IF NOT EXISTS reminders(id INTEGER PRIMARY KEY AUTOINCREMENT,item TEXT NOT NULL,trigger_at INTEGER NOT NULL,done INTEGER NOT NULL DEFAULT 0)");if(o<3){d.execSQL("ALTER TABLE reminders ADD COLUMN estimated_amount REAL NOT NULL DEFAULT 0");d.execSQL("ALTER TABLE reminders ADD COLUMN expense_id INTEGER");}if(o<4){d.execSQL("CREATE TABLE IF NOT EXISTS category_items(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,category TEXT NOT NULL,icon TEXT NOT NULL DEFAULT '📦',UNIQUE(name,category))");}if(o<5){d.execSQL("ALTER TABLE expenses ADD COLUMN item TEXT");d.execSQL("UPDATE expenses SET item=(SELECT name FROM category_items WHERE category_items.category=expenses.category AND category_items.name=expenses.description LIMIT 1) WHERE item IS NULL");}}}
+    private static class DB extends SQLiteOpenHelper{DB(Context c){super(c,"saqib_finance.db",null,6);}public void onCreate(SQLiteDatabase d){d.execSQL("CREATE TABLE expenses(id INTEGER PRIMARY KEY AUTOINCREMENT,category TEXT NOT NULL,description TEXT NOT NULL,amount REAL NOT NULL,date TEXT NOT NULL,item TEXT)");d.execSQL("CREATE TABLE incomes(id INTEGER PRIMARY KEY AUTOINCREMENT,amount REAL NOT NULL,source TEXT NOT NULL,date TEXT NOT NULL,note TEXT NOT NULL DEFAULT '')");d.execSQL("CREATE TABLE reminders(id INTEGER PRIMARY KEY AUTOINCREMENT,item TEXT NOT NULL,trigger_at INTEGER NOT NULL,done INTEGER NOT NULL DEFAULT 0,estimated_amount REAL NOT NULL DEFAULT 0,expense_id INTEGER)");d.execSQL("CREATE TABLE category_items(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,category TEXT NOT NULL,icon TEXT NOT NULL DEFAULT '📦',UNIQUE(name,category))");}public void onUpgrade(SQLiteDatabase d,int o,int n){if(o<2)d.execSQL("CREATE TABLE IF NOT EXISTS reminders(id INTEGER PRIMARY KEY AUTOINCREMENT,item TEXT NOT NULL,trigger_at INTEGER NOT NULL,done INTEGER NOT NULL DEFAULT 0)");if(o<3){d.execSQL("ALTER TABLE reminders ADD COLUMN estimated_amount REAL NOT NULL DEFAULT 0");d.execSQL("ALTER TABLE reminders ADD COLUMN expense_id INTEGER");}if(o<4){d.execSQL("CREATE TABLE IF NOT EXISTS category_items(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,category TEXT NOT NULL,icon TEXT NOT NULL DEFAULT '📦',UNIQUE(name,category))");}if(o<5){d.execSQL("ALTER TABLE expenses ADD COLUMN item TEXT");d.execSQL("UPDATE expenses SET item=(SELECT name FROM category_items WHERE category_items.category=expenses.category AND category_items.name=expenses.description LIMIT 1) WHERE item IS NULL");}if(o<6){d.execSQL("CREATE TABLE IF NOT EXISTS incomes(id INTEGER PRIMARY KEY AUTOINCREMENT,amount REAL NOT NULL,source TEXT NOT NULL,date TEXT NOT NULL,note TEXT NOT NULL DEFAULT '')");}}}
 }
