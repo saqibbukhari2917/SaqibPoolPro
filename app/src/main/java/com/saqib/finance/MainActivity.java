@@ -951,6 +951,29 @@ public class MainActivity extends FragmentActivity {
     private void remindersPage(){
         pageHeader("Buy Reminders","");
         LinearLayout c=content();
+        LinearLayout pendingCard=card(c);
+        pendingCard.addView(txt("SAVED REMINDERS",10,GOLD,true));
+        Cursor pendingRows=db.getReadableDatabase().rawQuery("SELECT item,trigger_at,estimated_amount FROM reminders WHERE done=0 ORDER BY trigger_at ASC",null);
+        int pendingCount=0;
+        while(pendingRows.moveToNext()){
+            String reminderItem=pendingRows.getString(0);
+            long reminderTime=pendingRows.getLong(1);
+            double reminderEstimate=pendingRows.getDouble(2);
+            LinearLayout reminderRow=col();
+            reminderRow.setPadding(dp(10),dp(9),dp(10),dp(9));
+            reminderRow.setBackground(shape(bg,12));
+            LinearLayout.LayoutParams reminderLp=lp(-1,-2);reminderLp.topMargin=dp(8);pendingCard.addView(reminderRow,reminderLp);
+            LinearLayout reminderTop=row();reminderTop.setGravity(Gravity.CENTER_VERTICAL);
+            TextView reminderName=txt("🛍️  "+reminderItem,14,ink,true);reminderTop.addView(reminderName,new LinearLayout.LayoutParams(0,-2,1));
+            TextView pendingTag=txt("PENDING",10,GREEN,true);pendingTopPad(pendingTag);reminderTop.addView(pendingTag);
+            reminderRow.addView(reminderTop);
+            TextView reminderDate=txt(new SimpleDateFormat("dd MMM yyyy · hh:mm a",Locale.ENGLISH).format(new Date(reminderTime)),12,muted,false);
+            reminderDate.setPadding(0,dp(5),0,0);reminderRow.addView(reminderDate);
+            if(reminderEstimate>0){TextView estimateText=txt("Estimated: "+money(reminderEstimate),11,muted,false);estimateText.setPadding(0,dp(3),0,0);reminderRow.addView(estimateText);}
+            pendingCount++;
+        }
+        pendingRows.close();
+        if(pendingCount==0)pendingCard.addView(txt("No pending reminders yet.",12,muted,false));
         final String[] chosen={"",""};
         Calendar when=Calendar.getInstance();when.add(Calendar.HOUR_OF_DAY,1);
         LinearLayout categoryScreen=col();c.addView(categoryScreen,lp(-1,-2));
