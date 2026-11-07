@@ -965,7 +965,7 @@ public class MainActivity extends FragmentActivity {
             LinearLayout.LayoutParams reminderLp=lp(-1,-2);reminderLp.topMargin=dp(8);pendingCard.addView(reminderRow,reminderLp);
             LinearLayout reminderTop=row();reminderTop.setGravity(Gravity.CENTER_VERTICAL);
             TextView reminderName=txt("🛍️  "+reminderItem,14,ink,true);reminderTop.addView(reminderName,new LinearLayout.LayoutParams(0,-2,1));
-            TextView pendingTag=txt("PENDING",10,GREEN,true);pendingTopPad(pendingTag);reminderTop.addView(pendingTag);
+            TextView pendingTag=txt("PENDING",10,GREEN,true);pendingTag.setPadding(dp(7),dp(4),dp(7),dp(4));reminderTop.addView(pendingTag);
             reminderRow.addView(reminderTop);
             TextView reminderDate=txt(new SimpleDateFormat("dd MMM yyyy · hh:mm a",Locale.ENGLISH).format(new Date(reminderTime)),12,muted,false);
             reminderDate.setPadding(0,dp(5),0,0);reminderRow.addView(reminderDate);
